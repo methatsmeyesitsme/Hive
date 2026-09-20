@@ -20,6 +20,8 @@ export type LocalChatMessage = {
 };
 
 export type LocalDevice = "webgpu" | "wasm";
+export type LocalDtype = "q4" | "q4f16" | "q8";
+export type LocalBackend = { device: LocalDevice; dtype: LocalDtype };
 
 type Generator = (
   messages: LocalChatMessage[],
@@ -39,7 +41,7 @@ type TransformersModule = {
     model: string,
     options: {
       device: LocalDevice;
-      dtype: "q4";
+      dtype: LocalDtype;
       progress_callback?: (event: ProgressEvent) => void;
       session_options?: Record<string, unknown>;
     },
@@ -83,16 +85,34 @@ export function localModelSupported(): boolean {
 }
 
 /**
- * Which compute backends to try, in order. Adding `?device=wasm` to the page
- * address forces the CPU (WASM) backend, which is slower but avoids WebGPU
- * problems on some phones.
+ * Which backend/model-file combinations to try, in order.
+ *
+ * iPhones and iPads get the CPU (WASM) backend with the 8-bit model file: it is
+ * a few hundred MB smaller than the 4-bit file, and loading the 4-bit file
+ * crashed Safari's tab. Everything else keeps 4-bit, preferring WebGPU.
+ *
+ * Overrides on the page address: `?device=wasm` and `?dtype=q4|q4f16|q8`.
  */
-export function pickDevices(search: string, hasWebGpu: boolean): LocalDevice[] {
-  if (new URLSearchParams(search).get("device") === "wasm") return ["wasm"];
-  return hasWebGpu ? ["webgpu", "wasm"] : ["wasm"];
+export function pickBackends(search: string, hasWebGpu: boolean, ios: boolean): LocalBackend[] {
+  const params = new URLSearchParams(search);
+  const forcedDevice = params.get("device");
+  const forcedDtype = params.get("dtype");
+  const dtype: LocalDtype | null =
+    forcedDtype === "q4" || forcedDtype === "q4f16" || forcedDtype === "q8" ? forcedDtype : null;
+
+  const wasmOnly = forcedDevice === "wasm" || ios || !hasWebGpu;
+  if (wasmOnly) return [{ device: "wasm", dtype: dtype ?? (ios ? "q8" : "q4") }];
+  return [
+    { device: "webgpu", dtype: dtype ?? "q4" },
+    { device: "wasm", dtype: dtype === "q4f16" ? "q4" : (dtype ?? "q4") },
+  ];
 }
 
-async function candidateDevices(): Promise<LocalDevice[]> {
+export function isIOS(ua: string, platform: string, touchPoints: number): boolean {
+  return /iPad|iPhone|iPod/.test(ua) || (platform === "MacIntel" && touchPoints > 1);
+}
+
+async function candidateBackends(): Promise<LocalBackend[]> {
   let hasWebGpu = false;
   const gpu = (navigator as unknown as {
     gpu?: { requestAdapter: () => Promise<unknown | null> };
@@ -104,7 +124,8 @@ async function candidateDevices(): Promise<LocalDevice[]> {
       hasWebGpu = false;
     }
   }
-  return pickDevices(typeof location === "undefined" ? "" : location.search, hasWebGpu);
+  const ios = isIOS(navigator.userAgent, navigator.platform, navigator.maxTouchPoints ?? 0);
+  return pickBackends(typeof location === "undefined" ? "" : location.search, hasWebGpu, ios);
 }
 
 /** Breadcrumb text for a download fraction (0..1), bucketed so it is written rarely. */
@@ -158,16 +179,17 @@ export function takeLastBreadcrumb(): Breadcrumb | null {
   }
 }
 
-let loading: Promise<{ generator: Generator; device: LocalDevice }> | null = null;
+type Loaded = { generator: Generator; device: LocalDevice; label: string };
+let loading: Promise<Loaded> | null = null;
 
-function loadModel(): Promise<{ generator: Generator; device: LocalDevice }> {
+function loadModel(): Promise<Loaded> {
   if (loading) return loading;
 
   loading = (async () => {
     setStatus({ stage: "loading", progress: 0, error: null });
 
     const files = new Map<string, { loaded: number; total: number }>();
-    let attempt: LocalDevice = "wasm";
+    let attempt = "wasm";
     let lastLabel = "";
     const onProgress = (e: ProgressEvent) => {
       if (!e.file || typeof e.total !== "number" || typeof e.loaded !== "number") return;
@@ -206,20 +228,22 @@ function loadModel(): Promise<{ generator: Generator; device: LocalDevice }> {
         : { graphOptimizationLevel: "disabled", enableCpuMemArena: false, enableMemPattern: false };
 
     let lastError: unknown = null;
-    for (const device of await candidateDevices()) {
+    for (const backend of await candidateBackends()) {
+      const { device, dtype } = backend;
+      const label = `${device}/${dtype}`;
       try {
-        attempt = device;
+        attempt = label;
         lastLabel = "";
-        setBreadcrumb("loading the model", device);
+        setBreadcrumb("loading the model", label);
         const generator = await mod.pipeline("text-generation", MODEL_ID, {
           device,
-          dtype: "q4",
+          dtype,
           progress_callback: onProgress,
           session_options: sessionOptions,
         });
         setStatus({ stage: "ready", progress: 1, device });
         writeCrumb(null);
-        return { generator, device };
+        return { generator, device, label };
       } catch (err) {
         lastError = err;
         files.clear();
@@ -258,8 +282,8 @@ export function generateChat(
   options: GenerateOptions,
 ): Promise<{ text: string; device: LocalDevice }> {
   const run = async () => {
-    const { generator, device } = await loadModel();
-    setBreadcrumb(`writing ${options.label ?? "a reply"}`, device);
+    const { generator, device, label } = await loadModel();
+    setBreadcrumb(`writing ${options.label ?? "a reply"}`, label);
     const out = await generator(messages, {
       max_new_tokens: options.maxNewTokens,
       do_sample: true,

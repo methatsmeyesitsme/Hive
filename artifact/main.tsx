@@ -93,7 +93,7 @@ window.addEventListener("pagehide", markBreadcrumbClean);
 const lastRun = takeLastBreadcrumb();
 if (lastRun && !lastRun.clean) {
   const hint =
-    lastRun.device === "webgpu"
+    lastRun.device?.startsWith("webgpu")
       ? "If it keeps happening, add ?device=wasm to the web address. That is slower but avoids the GPU."
       : "This usually means the phone ran out of memory while running the model.";
   setTimeout(() => {
