@@ -1,0 +1,8 @@
+/* Fit Hive inside the published-page frame (safe areas are handled on :root). */
+.h-dvh { height: 100%; }
+.min-h-dvh { min-height: 100%; }
+.fixed.inset-0 {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

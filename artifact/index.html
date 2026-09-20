@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Hive</title>
+<style>
+  :root {
+    --hive-bg: #070d18;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --hive-bg: #070d18; } }
+  :root[data-theme="dark"] { --hive-bg: #070d18; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { height: 100%; margin: 0; background: var(--hive-bg); }
+  #root { height: 100%; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="./main.tsx"></script>
+</body>
+</html>

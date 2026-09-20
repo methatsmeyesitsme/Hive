@@ -18,7 +18,8 @@
     "check:auth": "node scripts/check-auth-invariant.mjs",
     "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/hive/mc-parse.test.ts",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:static": "vite build --config artifact/vite.config.ts && node artifact/publish-docs.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
@@ -92,6 +93,7 @@
     "prettier": "^3.4.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.56.1",
-    "vite": "^8.2.0"
+    "vite": "^8.2.0",
+    "vite-plugin-singlefile": "^2.3.0"
   }
 }
