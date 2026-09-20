@@ -1,11 +1,9 @@
 /**
  * On-device model runner for Hive (browser only).
  *
- * Runs a small instruction-tuned model with Transformers.js: Qwen2.5-0.5B where
- * the device can take it, stepping down to SmolLM2-360M / SmolLM2-135M on phones
- * that crash while loading. No API key, no server round-trip: the weights are
- * downloaded once by the browser, cached, and executed on WebGPU when available
- * (falling back to WASM/CPU).
+ * Runs Qwen2.5-0.5B-Instruct with Transformers.js. No API key, no server
+ * round-trip: the weights are downloaded once by the browser, cached, and
+ * executed on WebGPU when available (falling back to WASM/CPU).
  *
  * Transformers.js is loaded from a pinned CDN URL at runtime instead of being
  * bundled. Its Node build pulls in native onnxruntime-node binaries, which the
@@ -15,13 +13,12 @@
 
 export type ModelSpec = { id: string; name: string };
 
-/** Largest to smallest. A crash while loading or running moves down one rung. */
+/** Qwen is the model. The smaller ones are only used when asked for with `?model=`. */
 export const MODEL_LADDER: ModelSpec[] = [
   { id: "onnx-community/Qwen2.5-0.5B-Instruct", name: "Qwen2.5-0.5B" },
   { id: "HuggingFaceTB/SmolLM2-360M-Instruct", name: "SmolLM2-360M" },
   { id: "HuggingFaceTB/SmolLM2-135M-Instruct", name: "SmolLM2-135M" },
 ];
-const LAST_RUNG = MODEL_LADDER.length - 1;
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0";
 
 export type LocalChatMessage = {
@@ -96,35 +93,27 @@ export function localModelSupported(): boolean {
   return typeof window !== "undefined" && typeof WebAssembly !== "undefined";
 }
 
-const RUNG_KEY = "hive-model-rung";
 const MODEL_ALIASES: Record<string, number> = { qwen: 0, "360m": 1, "135m": 2 };
 
 /**
- * Which rung of MODEL_LADDER to use. iPhones and iPads start one step down,
- * because Qwen2.5-0.5B crashed Safari's tab while starting. A stored rung (raised
- * after a crash) can only move further down. `?model=qwen|360m|135m` overrides.
+ * Which model to use: always Qwen2.5-0.5B, on every device. A smaller model is
+ * used only when the page address says so: `?model=360m` or `?model=135m`.
  */
-export function effectiveRung(search: string, ios: boolean, stored: number): number {
+export function effectiveRung(search: string): number {
   const forced = new URLSearchParams(search).get("model");
-  if (forced && forced in MODEL_ALIASES) return MODEL_ALIASES[forced];
-  return Math.min(LAST_RUNG, Math.max(ios ? 1 : 0, stored));
+  return forced && forced in MODEL_ALIASES ? MODEL_ALIASES[forced] : 0;
 }
 
 /**
  * Which model/backend/model-file combinations to try, in order.
  *
- * iOS uses the CPU (WASM) backend. On other devices WebGPU comes first with a
- * WASM fallback. Overrides on the page address: `?device=wasm`,
- * `?dtype=q4|q4f16|q8`, `?model=qwen|360m|135m`.
+ * iOS uses the CPU (WASM) backend, with the smaller 8-bit Qwen file. On other
+ * devices WebGPU comes first with a WASM fallback. Overrides on the page address:
+ * `?device=wasm`, `?dtype=q4|q4f16|q8`, `?model=qwen|360m|135m`.
  */
-export function pickBackends(
-  search: string,
-  hasWebGpu: boolean,
-  ios: boolean,
-  storedRung = 0,
-): LocalBackend[] {
+export function pickBackends(search: string, hasWebGpu: boolean, ios: boolean): LocalBackend[] {
   const params = new URLSearchParams(search);
-  const model = MODEL_LADDER[effectiveRung(search, ios, storedRung)];
+  const model = MODEL_LADDER[effectiveRung(search)];
   const forcedDtype = params.get("dtype");
   const dtype: LocalDtype | null =
     forcedDtype === "q4" || forcedDtype === "q4f16" || forcedDtype === "q8" ? forcedDtype : null;
@@ -139,33 +128,8 @@ export function pickBackends(
   ];
 }
 
-function readStoredRung(): number {
-  try {
-    const n = Number(localStorage.getItem(RUNG_KEY));
-    return Number.isInteger(n) && n >= 0 ? Math.min(n, LAST_RUNG) : 0;
-  } catch {
-    return 0;
-  }
-}
-
 function detectIOS(): boolean {
   return isIOS(navigator.userAgent, navigator.platform, navigator.maxTouchPoints ?? 0);
-}
-
-/**
- * Call once when the previous session died mid-run. Moves one rung down the
- * model ladder for next time (the choice is remembered in this browser).
- */
-export function registerCrash(): { model: ModelSpec; movedDown: boolean } {
-  const search = typeof location === "undefined" ? "" : location.search;
-  const current = effectiveRung(search, detectIOS(), readStoredRung());
-  const next = Math.min(current + 1, LAST_RUNG);
-  try {
-    localStorage.setItem(RUNG_KEY, String(next));
-  } catch {
-    // best-effort
-  }
-  return { model: MODEL_LADDER[next], movedDown: next > current };
 }
 
 export function isIOS(ua: string, platform: string, touchPoints: number): boolean {
@@ -188,7 +152,6 @@ async function candidateBackends(): Promise<LocalBackend[]> {
     typeof location === "undefined" ? "" : location.search,
     hasWebGpu,
     detectIOS(),
-    readStoredRung(),
   );
 }
 

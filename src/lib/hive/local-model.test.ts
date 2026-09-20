@@ -11,19 +11,14 @@ import {
 const [QWEN, SMOL360, SMOL135] = MODEL_LADDER;
 
 describe("effectiveRung", () => {
-  it("starts at Qwen on ordinary devices and one step down on iOS", () => {
-    assert.equal(effectiveRung("", false, 0), 0);
-    assert.equal(effectiveRung("", true, 0), 1);
+  it("is always Qwen unless the address asks for another model", () => {
+    assert.equal(effectiveRung(""), 0);
+    assert.equal(effectiveRung("?model=nope"), 0);
+    assert.equal(effectiveRung("?model=qwen"), 0);
   });
-  it("a stored rung can only move further down", () => {
-    assert.equal(effectiveRung("", false, 2), 2);
-    assert.equal(effectiveRung("", true, 0), 1);
-    assert.equal(effectiveRung("", true, 99), 2);
-  });
-  it("?model= overrides everything", () => {
-    assert.equal(effectiveRung("?model=qwen", true, 2), 0);
-    assert.equal(effectiveRung("?model=135m", false, 0), 2);
-    assert.equal(effectiveRung("?model=nope", false, 0), 0);
+  it("?model=360m / 135m opt in to a smaller model", () => {
+    assert.equal(effectiveRung("?model=360m"), 1);
+    assert.equal(effectiveRung("?model=135m"), 2);
   });
 });
 
@@ -37,16 +32,12 @@ describe("pickBackends", () => {
   it("uses WASM only when there is no WebGPU", () => {
     assert.deepEqual(pickBackends("", false, false), [{ device: "wasm", dtype: "q4", model: QWEN }]);
   });
-  it("iPhones and iPads start on SmolLM2-360M with the CPU backend", () => {
-    assert.deepEqual(pickBackends("", true, true), [{ device: "wasm", dtype: "q4", model: SMOL360 }]);
+  it("iPhones and iPads use Qwen on the CPU backend with the smaller 8-bit file", () => {
+    assert.deepEqual(pickBackends("", true, true), [{ device: "wasm", dtype: "q8", model: QWEN }]);
   });
-  it("after crashes an iPhone steps down to SmolLM2-135M", () => {
-    assert.deepEqual(pickBackends("", true, true, 2), [{ device: "wasm", dtype: "q4", model: SMOL135 }]);
-  });
-  it("Qwen on an iPhone (forced) uses the smaller 8-bit file", () => {
-    assert.deepEqual(pickBackends("?model=qwen", true, true), [
-      { device: "wasm", dtype: "q8", model: QWEN },
-    ]);
+  it("?model= opts in to a smaller model on a phone", () => {
+    assert.deepEqual(pickBackends("?model=360m", true, true), [{ device: "wasm", dtype: "q4", model: SMOL360 }]);
+    assert.deepEqual(pickBackends("?model=135m", true, true), [{ device: "wasm", dtype: "q4", model: SMOL135 }]);
   });
   it("?device=wasm forces the CPU backend", () => {
     assert.deepEqual(pickBackends("?x=1&device=wasm", true, false), [
@@ -54,8 +45,8 @@ describe("pickBackends", () => {
     ]);
   });
   it("?dtype overrides the model file, ignoring unknown values", () => {
-    assert.deepEqual(pickBackends("?dtype=q8", true, true), [{ device: "wasm", dtype: "q8", model: SMOL360 }]);
-    assert.deepEqual(pickBackends("?dtype=nope", true, true), [{ device: "wasm", dtype: "q4", model: SMOL360 }]);
+    assert.deepEqual(pickBackends("?dtype=q4", true, true), [{ device: "wasm", dtype: "q4", model: QWEN }]);
+    assert.deepEqual(pickBackends("?dtype=nope", true, true), [{ device: "wasm", dtype: "q8", model: QWEN }]);
   });
   it("never asks the CPU backend for the fp16 file", () => {
     assert.deepEqual(pickBackends("?dtype=q4f16", true, false), [

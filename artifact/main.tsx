@@ -5,7 +5,6 @@ import { AppShell } from "@/components/hive/app-shell";
 import "../src/styles.css";
 import {
   markBreadcrumbClean,
-  registerCrash,
   subscribeModelStatus,
   takeLastBreadcrumb,
 } from "@/lib/hive/local-model";
@@ -93,15 +92,21 @@ try {
 window.addEventListener("pagehide", markBreadcrumbClean);
 const lastRun = takeLastBreadcrumb();
 if (lastRun && !lastRun.clean) {
-  const { model, movedDown } = registerCrash();
-  const hint = movedDown
-    ? `Switching to a smaller model (${model.name}) for the next try. Send your message again.`
-    : "This is already the smallest model, so this device may not be able to run models in the browser.";
+  const hint = lastRun.device?.includes("webgpu")
+    ? "If it keeps happening, add ?device=wasm to the web address (slower, avoids the GPU)."
+    : "If it keeps happening on this phone, it may be running out of memory. Adding ?model=360m to the web address uses a smaller model.";
   setTimeout(() => {
     toast.warning(`Hive reloaded while ${lastRun.stage}${lastRun.device ? ` (${lastRun.device})` : ""}. ${hint}`, {
       duration: 20000,
     });
   }, 800);
+}
+
+// An earlier build remembered a smaller model after a crash. Qwen is the default again.
+try {
+  localStorage.removeItem("hive-model-rung");
+} catch {
+  // storage unavailable
 }
 
 /** Show model download progress so a long first load doesn't look stuck. */
