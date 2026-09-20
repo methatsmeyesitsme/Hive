@@ -11,6 +11,8 @@
  * graph entirely. It is only ever executed in the browser.
  */
 
+import { perf } from "./perf.ts";
+
 export type ModelSpec = { id: string; name: string };
 
 /** Qwen is the model. The smaller ones are only used when asked for with `?model=`. */
@@ -30,10 +32,10 @@ export type LocalDevice = "webgpu" | "wasm";
 export type LocalDtype = "q4" | "q4f16" | "q8";
 export type LocalBackend = { device: LocalDevice; dtype: LocalDtype; model: ModelSpec };
 
-type Generator = (
+type Generator = ((
   messages: LocalChatMessage[],
   options: Record<string, unknown>,
-) => Promise<Array<{ generated_text: LocalChatMessage[] }>>;
+) => Promise<Array<{ generated_text: LocalChatMessage[] }>>) & { tokenizer?: unknown };
 
 type ProgressEvent = {
   status: string;
@@ -53,6 +55,18 @@ type TransformersModule = {
       session_options?: Record<string, unknown>;
     },
   ) => Promise<Generator>;
+  /** Streams tokens as they are generated (lets us time prefill vs decode). */
+  TextStreamer?: new (
+    tokenizer: unknown,
+    options: {
+      skip_prompt?: boolean;
+      skip_special_tokens?: boolean;
+      callback_function?: (text: string) => void;
+      token_callback_function?: (tokens: bigint[]) => void;
+    },
+  ) => unknown;
+  /** Lets us end generation early, e.g. right after </html>. */
+  InterruptableStoppingCriteria?: new () => { interrupt: () => void };
   env?: {
     useBrowserCache?: boolean;
     backends?: { onnx?: { wasm?: { numThreads?: number } } };
@@ -206,13 +220,15 @@ export function takeLastBreadcrumb(): Breadcrumb | null {
   }
 }
 
-type Loaded = { generator: Generator; device: LocalDevice; label: string };
+type Loaded = { generator: Generator; device: LocalDevice; label: string; mod: TransformersModule };
 let loading: Promise<Loaded> | null = null;
 
 function loadModel(): Promise<Loaded> {
   if (loading) return loading;
 
   loading = (async () => {
+    const tStart = perf.now();
+    let tDownloadDone: number | null = null;
     setStatus({ stage: "loading", progress: 0, error: null });
 
     const files = new Map<string, { loaded: number; total: number }>();
@@ -229,6 +245,7 @@ function loadModel(): Promise<Loaded> {
       }
       if (total > 0) {
         const progress = Math.min(1, loaded / total);
+        if (progress >= 0.995 && tDownloadDone === null) tDownloadDone = perf.now();
         setStatus({ progress });
         const label = progressLabel(progress);
         if (label !== lastLabel) {
@@ -243,6 +260,8 @@ function loadModel(): Promise<Loaded> {
       .__HIVE_TRANSFORMERS__;
     const mod =
       injected ?? ((await import(/* @vite-ignore */ TRANSFORMERS_URL)) as TransformersModule);
+
+    const tLibrary = perf.now();
 
     // Memory-saving defaults for phones. Escape hatches on the page address:
     //   ?cache=off   skip the browser cache copy of the model files
@@ -267,15 +286,25 @@ function loadModel(): Promise<Loaded> {
         lastLabel = "";
         setStatus({ model: model.name, progress: 0 });
         setBreadcrumb("loading the model", label);
+        tDownloadDone = null;
+        const tPipeline = perf.now();
         const generator = await mod.pipeline("text-generation", model.id, {
           device,
           dtype,
           progress_callback: onProgress,
           session_options: sessionOptions,
         });
+        const tReady = perf.now();
         setStatus({ stage: "ready", progress: 1, device });
         writeCrumb(null);
-        return { generator, device, label };
+        perf.recordLoad({
+          label,
+          totalMs: tReady - tStart,
+          libraryMs: tLibrary - tStart,
+          downloadMs: tDownloadDone === null ? null : tDownloadDone - tPipeline,
+          initMs: tDownloadDone === null ? null : tReady - tDownloadDone,
+        });
+        return { generator, device, label, mod };
       } catch (err) {
         lastError = err;
         files.clear();
@@ -305,8 +334,10 @@ let queue: Promise<unknown> = Promise.resolve();
 export type GenerateOptions = {
   maxNewTokens: number;
   temperature?: number;
-  /** Shown in the breadcrumb, e.g. "the brief" or "the page". */
+  /** Shown in the breadcrumb and timing report, e.g. "the brief" or "the page". */
   label?: string;
+  /** End generation as soon as this returns true for the text produced so far. */
+  stopWhen?: (textSoFar: string) => boolean;
 };
 
 export function generateChat(
@@ -314,20 +345,82 @@ export function generateChat(
   options: GenerateOptions,
 ): Promise<{ text: string; device: LocalDevice }> {
   const run = async () => {
-    const { generator, device, label } = await loadModel();
+    // The model is loaded once per page load and reused by every call.
+    const { generator, device, label, mod } = await loadModel();
     setBreadcrumb(`writing ${options.label ?? "a reply"}`, label);
-    const out = await generator(messages, {
+
+    const callOptions: Record<string, unknown> = {
       max_new_tokens: options.maxNewTokens,
       do_sample: true,
       temperature: options.temperature ?? 0.5,
       top_p: 0.9,
       repetition_penalty: 1.05,
-    });
+    };
+
+    const t0 = perf.now();
+    let tFirst: number | null = null;
+    let tokens = 0;
+    let stoppedEarly = false;
+    if (mod.TextStreamer && mod.InterruptableStoppingCriteria && generator.tokenizer) {
+      const stopper = new mod.InterruptableStoppingCriteria();
+      let soFar = "";
+      callOptions.stopping_criteria = stopper;
+      callOptions.streamer = new mod.TextStreamer(generator.tokenizer, {
+        skip_prompt: true,
+        skip_special_tokens: true,
+        callback_function: (text) => {
+          soFar += text;
+          if (options.stopWhen && !stoppedEarly && options.stopWhen(soFar)) {
+            stoppedEarly = true;
+            stopper.interrupt();
+          }
+        },
+        token_callback_function: () => {
+          tokens += 1;
+          if (tFirst === null) tFirst = perf.now();
+        },
+      });
+    }
+
+    const out = await generator(messages, callOptions);
+    const t1 = perf.now();
     const text = out[0]?.generated_text?.at(-1)?.content ?? "";
     writeCrumb(null);
+
+    const decodeMs = tFirst === null ? null : t1 - tFirst;
+    perf.addGen({
+      label: options.label ?? "reply",
+      totalMs: t1 - t0,
+      ttftMs: tFirst === null ? null : tFirst - t0,
+      decodeMs,
+      tokens,
+      tokPerSec: decodeMs !== null && decodeMs > 0 && tokens > 1 ? (tokens - 1) / (decodeMs / 1000) : null,
+      maxNew: options.maxNewTokens,
+      promptChars: messages.reduce((n, m) => n + m.content.length, 0),
+      stoppedEarly,
+    });
     return { text, device };
   };
+  // One generation at a time: a single ONNX session cannot run concurrently.
   const next = queue.then(run, run);
   queue = next.catch(() => undefined);
   return next;
+}
+
+/**
+ * If the model files are already in the browser cache, start loading the model
+ * now so the start-up cost overlaps with the person typing their first message.
+ * Never triggers a first-time download.
+ */
+export async function warmModelIfCached(): Promise<boolean> {
+  try {
+    if (typeof caches === "undefined") return false;
+    if (!(await caches.has("transformers-cache"))) return false;
+    const cache = await caches.open("transformers-cache");
+    if ((await cache.keys()).length === 0) return false;
+    void loadModel().catch(() => undefined);
+    return true;
+  } catch {
+    return false;
+  }
 }

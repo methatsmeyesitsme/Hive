@@ -7,6 +7,7 @@ import {
   markBreadcrumbClean,
   subscribeModelStatus,
   takeLastBreadcrumb,
+  warmModelIfCached,
 } from "@/lib/hive/local-model";
 import "./artifact.css";
 
@@ -135,3 +136,12 @@ createRoot(document.getElementById("root")!).render(
     />
   </TooltipProvider>,
 );
+
+// If the model is already in this browser's cache, start it now so its start-up
+// overlaps with the first message being typed. Skipped after a crash so a phone
+// that cannot run the model does not reload on every visit.
+if (!lastRun || lastRun.clean) {
+  window.setTimeout(() => {
+    void warmModelIfCached();
+  }, 1500);
+}

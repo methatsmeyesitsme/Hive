@@ -12,6 +12,7 @@ import {
   pageTitle,
   parseBrief,
 } from "./mc-parse";
+import { perf } from "./perf";
 import type { Artifact, McTaskResult } from "./types";
 
 /**
@@ -55,6 +56,7 @@ Write ONE complete, self-contained HTML5 page with all CSS inline in a <style> t
 Use small inline JavaScript only if the page needs it.
 Write real, specific copy. No lorem ipsum. No external images, scripts or stylesheets (Google Fonts are allowed).
 Make it responsive and visually distinctive, with a clear colour palette and readable type.
+Keep it compact: about 80 lines of HTML and CSS in total, with three or four short sections.
 Output only the HTML, starting with <!doctype html>. No explanations. No markdown.`;
 
 function clip(text: string, n: number): string {
@@ -124,11 +126,15 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
   }
 
   try {
-    // Stage 1: MC's brief (short, plain text).
-    const briefOut = await generateChat(briefMessages(data), {
-      maxNewTokens: 160,
+    // Stage 1: MC's brief (short, plain text). Stops as soon as the BUILD line is written.
+    const tPrepBrief = perf.now();
+    const briefMsgs = briefMessages(data);
+    perf.prep(perf.now() - tPrepBrief);
+    const briefOut = await generateChat(briefMsgs, {
+      maxNewTokens: 120,
       temperature: 0.3,
-      label: "the brief",
+      label: "brief",
+      stopWhen: (text) => /BUILD\s*:\s*(yes|no)/i.test(text),
     });
     const brief = parseBrief(briefOut.text, data.prompt);
     const plan = {
@@ -146,11 +152,25 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
     // Stage 2: the page itself (raw HTML, no JSON wrapper).
     const revisable =
       data.currentHtml && data.currentHtml.length <= MAX_REVISABLE_HTML ? data.currentHtml : null;
-    const budget = briefOut.device === "webgpu" ? 3072 : 1600;
-    const pageOut = await generateChat(buildMessages(data, brief, revisable), {
+    // Decoding is the slow part on a phone's CPU, so the page budget is tight and
+    // generation stops the moment the document is closed. `?tokens=N` overrides it.
+    const override = Number(
+      new URLSearchParams(typeof location === "undefined" ? "" : location.search).get("tokens"),
+    );
+    const budget =
+      Number.isFinite(override) && override >= 200 && override <= 4000
+        ? Math.floor(override)
+        : briefOut.device === "webgpu"
+          ? 2048
+          : 1000;
+    const tPrepPage = perf.now();
+    const pageMsgs = buildMessages(data, brief, revisable);
+    perf.prep(perf.now() - tPrepPage);
+    const pageOut = await generateChat(pageMsgs, {
       maxNewTokens: budget,
       temperature: 0.5,
-      label: "the page",
+      label: "page",
+      stopWhen: (text) => /<\/html\s*>/i.test(text),
     });
 
     const html = extractHtml(pageOut.text);

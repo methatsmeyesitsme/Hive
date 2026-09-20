@@ -11,6 +11,7 @@ import {
 import { STORAGE_KEY } from "./constants";
 import { acquireLock, estimateSwarm, hrcAllocate } from "./limits";
 import type { SplitterPlan } from "./splitter";
+import { perf } from "./perf";
 import { buildSplitterStates, listSplitterIds, splitterOfLi } from "./splitter-state";
 import type {
   Artifact,
@@ -320,6 +321,7 @@ export const useHiveStore = create<HiveState>()(
         abortRun = controller;
         const signal = controller.signal;
         const runId = nid("run");
+        perf.beginRun();
         lockMap.clear();
 
         const userMsg: ChatMessage = {
@@ -399,6 +401,25 @@ export const useHiveStore = create<HiveState>()(
           set({ splitters: buildSplitterStates(splitPlans, get().lieutenants, tick) });
         const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+        // The swarm view is paced so it looks alive while the model works. That pacing
+        // overlaps with inference. Once the model has answered, it must not add wall
+        // time, so pauses collapse to a blink.
+        let modelSettled = false;
+        void apiPromise.then(
+          () => {
+            modelSettled = true;
+          },
+          () => {
+            modelSettled = true;
+          },
+        );
+        const pace = async (ms: number) => {
+          const afterModel = modelSettled;
+          const t = perf.now();
+          await sleep(afterModel ? Math.min(ms, 30) : ms, signal);
+          perf.pacing(afterModel, perf.now() - t);
+        };
+
         const fail = (message: string) => {
           if (signal.aborted) return;
           const sys: ChatMessage = {
@@ -427,10 +448,11 @@ export const useHiveStore = create<HiveState>()(
             })),
           });
           syncSplitters();
+          perf.finishRun();
         };
 
         try {
-          await sleep(700, signal);
+          await pace(700);
           if (get().runId !== runId) return;
           set({
             phase: "dispatching",
@@ -446,7 +468,7 @@ export const useHiveStore = create<HiveState>()(
             ].slice(0, 80),
           });
 
-          await sleep(650, signal);
+          await pace(650);
           const pre = hrcAllocate(provisional);
           if (!pre.ok) {
             set({
@@ -482,7 +504,7 @@ export const useHiveStore = create<HiveState>()(
             ].slice(0, 80),
           });
 
-          await sleep(700, signal);
+          await pace(700);
           set({
             phase: "summoning",
             status: { ...get().status, hrc: `Activating ${plural(splitPlans.length, "Splitter")}` },
@@ -497,7 +519,7 @@ export const useHiveStore = create<HiveState>()(
               ...get().audits,
             ].slice(0, 80),
           });
-          await sleep(450, signal);
+          await pace(450);
           set({ status: { ...get().status, hrc: "Summoning Li" } });
 
           const summoned: LieutenantState[] = [];
@@ -528,7 +550,7 @@ export const useHiveStore = create<HiveState>()(
               ].slice(0, 80),
             });
             syncSplitters();
-            await sleep(220, signal);
+            await pace(220);
           }
 
           let agentTotal = 0;
@@ -571,7 +593,7 @@ export const useHiveStore = create<HiveState>()(
                 },
               });
               syncSplitters();
-              await sleep(70, signal);
+              await pace(70);
             }
           }
 
@@ -588,7 +610,7 @@ export const useHiveStore = create<HiveState>()(
               ...get().audits,
             ].slice(0, 80),
           });
-          await sleep(500, signal);
+          await pace(500);
 
           set({
             phase: "working",
@@ -599,7 +621,10 @@ export const useHiveStore = create<HiveState>()(
             },
           });
 
+          const tWait = perf.now();
           const result = await apiPromise;
+          const tResult = perf.now();
+          perf.waitModel(tResult - tWait);
           if (signal.aborted || get().runId !== runId) return;
 
           if (!result.ok) {
@@ -700,7 +725,7 @@ export const useHiveStore = create<HiveState>()(
                 ...get().audits,
               ].slice(0, 80),
             });
-            await sleep(900, signal);
+            await pace(900);
           }
 
           set({
@@ -740,7 +765,7 @@ export const useHiveStore = create<HiveState>()(
               })),
             }));
             syncSplitters();
-            await sleep(420, signal);
+            await pace(420);
           }
 
           set({
@@ -758,7 +783,7 @@ export const useHiveStore = create<HiveState>()(
             })),
           });
           syncSplitters();
-          await sleep(700, signal);
+          await pace(700);
 
           set({
             phase: "integrating",
@@ -779,7 +804,7 @@ export const useHiveStore = create<HiveState>()(
             ].slice(0, 80),
           });
           syncSplitters();
-          await sleep(750, signal);
+          await pace(750);
 
           lockMap.clear();
           set({
@@ -803,7 +828,7 @@ export const useHiveStore = create<HiveState>()(
             });
           }
 
-          await sleep(400, signal);
+          await pace(400);
           if (signal.aborted || get().runId !== runId) return;
 
           const mcMsg: ChatMessage = {
@@ -829,6 +854,8 @@ export const useHiveStore = create<HiveState>()(
                 : p.name,
           }));
 
+          perf.integrate(perf.now() - tResult);
+          perf.finishRun();
           set({
             phase: "complete",
             agentTotal: 0,

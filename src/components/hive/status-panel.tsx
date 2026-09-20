@@ -1,9 +1,11 @@
+import { useSyncExternalStore } from "react";
 import { PanelRight, Snowflake, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { MAX_AGENTS_TOTAL, MAX_SPLITTERS, MODEL_CLASS } from "@/lib/hive/constants";
+import { perf, perfRows } from "@/lib/hive/perf";
 import { useHiveStore } from "@/lib/hive/store";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +28,7 @@ export function StatusPanel({
   const freeze = useHiveStore((s) => s.freeze);
   const frozen = useHiveStore((s) => s.frozen);
   const audits = useHiveStore((s) => s.audits);
+  const lastRun = useSyncExternalStore(perf.subscribe, perf.getLast, perf.getLast);
 
   return (
     <aside className="flex h-full w-full flex-col border-l border-line bg-navy-2">
@@ -153,6 +156,31 @@ export function StatusPanel({
                 ))}
               </ul>
             </div>
+          )}
+
+          {lastRun && (
+            <>
+              <Separator />
+              <div data-testid="perf-report">
+                <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-dim">
+                  Last run timing
+                </p>
+                <ul className="space-y-1">
+                  {perfRows(lastRun).map(([name, value, indent]) => (
+                    <li
+                      key={name}
+                      className={cn(
+                        "flex justify-between gap-3 text-[11px] leading-snug",
+                        indent ? "pl-3 text-dim" : "text-mist",
+                      )}
+                    >
+                      <span className="shrink-0">{name}</span>
+                      <span className="text-right font-mono">{value}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
           )}
 
           <Separator />
