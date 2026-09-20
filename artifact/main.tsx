@@ -3,7 +3,11 @@ import { Toaster, toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/hive/app-shell";
 import "../src/styles.css";
-import { markBreadcrumbClean, takeLastBreadcrumb } from "@/lib/hive/local-model";
+import {
+  markBreadcrumbClean,
+  subscribeModelStatus,
+  takeLastBreadcrumb,
+} from "@/lib/hive/local-model";
 import "./artifact.css";
 
 type Downloads = { save: (req: { filename: string; data: Blob }) => Promise<unknown> };
@@ -98,6 +102,22 @@ if (lastRun && !lastRun.clean) {
     });
   }, 800);
 }
+
+/** Show model download progress so a long first load doesn't look stuck. */
+let lastPct = -1;
+subscribeModelStatus((status) => {
+  if (status.stage === "loading") {
+    const pct = Math.round(status.progress * 100);
+    if (pct !== lastPct) {
+      lastPct = pct;
+      toast.loading(`Loading Qwen… ${pct}%`, { id: "qwen-load" });
+    }
+  } else if (status.stage === "ready") {
+    toast.success("Qwen is ready", { id: "qwen-load", duration: 2500 });
+  } else if (status.stage === "error") {
+    toast.dismiss("qwen-load");
+  }
+});
 
 createRoot(document.getElementById("root")!).render(
   <TooltipProvider delayDuration={250}>

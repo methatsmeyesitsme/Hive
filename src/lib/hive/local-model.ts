@@ -41,8 +41,13 @@ type TransformersModule = {
       device: LocalDevice;
       dtype: "q4";
       progress_callback?: (event: ProgressEvent) => void;
+      session_options?: Record<string, unknown>;
     },
   ) => Promise<Generator>;
+  env?: {
+    useBrowserCache?: boolean;
+    backends?: { onnx?: { wasm?: { numThreads?: number } } };
+  };
 };
 
 export type ModelStatus = {
@@ -102,6 +107,13 @@ async function candidateDevices(): Promise<LocalDevice[]> {
   return pickDevices(typeof location === "undefined" ? "" : location.search, hasWebGpu);
 }
 
+/** Breadcrumb text for a download fraction (0..1), bucketed so it is written rarely. */
+export function progressLabel(fraction: number): string {
+  if (fraction >= 0.995) return "starting the model (download finished)";
+  const bucket = Math.min(90, Math.max(0, Math.floor(fraction * 10) * 10));
+  return `downloading the model (${bucket}%)`;
+}
+
 // Breadcrumb: what the model was doing, so a page that reloads mid-run (for
 // example because the phone ran out of memory) can say where it stopped.
 const CRUMB_KEY = "hive-mc-breadcrumb";
@@ -155,6 +167,8 @@ function loadModel(): Promise<{ generator: Generator; device: LocalDevice }> {
     setStatus({ stage: "loading", progress: 0, error: null });
 
     const files = new Map<string, { loaded: number; total: number }>();
+    let attempt: LocalDevice = "wasm";
+    let lastLabel = "";
     const onProgress = (e: ProgressEvent) => {
       if (!e.file || typeof e.total !== "number" || typeof e.loaded !== "number") return;
       files.set(e.file, { loaded: e.loaded, total: e.total });
@@ -164,19 +178,44 @@ function loadModel(): Promise<{ generator: Generator; device: LocalDevice }> {
         loaded += f.loaded;
         total += f.total;
       }
-      if (total > 0) setStatus({ progress: Math.min(1, loaded / total) });
+      if (total > 0) {
+        const progress = Math.min(1, loaded / total);
+        setStatus({ progress });
+        const label = progressLabel(progress);
+        if (label !== lastLabel) {
+          lastLabel = label;
+          setBreadcrumb(label, attempt);
+        }
+      }
     };
 
     const mod = (await import(/* @vite-ignore */ TRANSFORMERS_URL)) as TransformersModule;
 
+    // Memory-saving defaults for phones. Escape hatches on the page address:
+    //   ?cache=off   skip the browser cache copy of the model files
+    //   ?lowmem=off  use the runtime's normal (faster, hungrier) load settings
+    const flags = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
+    if (mod.env) {
+      if (flags.get("cache") === "off") mod.env.useBrowserCache = false;
+      const wasm = mod.env.backends?.onnx?.wasm;
+      if (wasm) wasm.numThreads = 1;
+    }
+    const sessionOptions =
+      flags.get("lowmem") === "off"
+        ? undefined
+        : { graphOptimizationLevel: "disabled", enableCpuMemArena: false, enableMemPattern: false };
+
     let lastError: unknown = null;
     for (const device of await candidateDevices()) {
       try {
+        attempt = device;
+        lastLabel = "";
         setBreadcrumb("loading the model", device);
         const generator = await mod.pipeline("text-generation", MODEL_ID, {
           device,
           dtype: "q4",
           progress_callback: onProgress,
+          session_options: sessionOptions,
         });
         setStatus({ stage: "ready", progress: 1, device });
         writeCrumb(null);
