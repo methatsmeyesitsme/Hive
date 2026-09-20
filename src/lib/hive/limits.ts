@@ -1,4 +1,5 @@
 import { LI_LETTERS, MAX_AGENTS_PER_LI, MAX_AGENTS_TOTAL, MAX_LI } from "./constants";
+import { allocateSplitters, type SplitAllocation } from "./splitter";
 import type { LieutenantPlan } from "./types";
 
 export type Allocation =
@@ -7,6 +8,8 @@ export type Allocation =
       paused: false;
       lieutenants: LieutenantPlan[];
       totalAgents: number;
+      /** New: physical Splitter plans produced by HRC */
+      splitAllocation: SplitAllocation & { ok: true };
     }
   | {
       ok: false;
@@ -16,7 +19,10 @@ export type Allocation =
 
 /**
  * HRC allocation. The only legal path to decide swarm size.
- * Rejects a 27th Li by deleting it and pausing production.
+ *
+ * 1. Validate and clamp the requested LIs (hard 26 Li / 25 agents-per-Li limits).
+ * 2. Pack those LIs into 1–5 physical Splitters via allocateSplitters().
+ * 3. Reject any attempt at a 27th Li by pausing production.
  */
 export function hrcAllocate(requested: LieutenantPlan[]): Allocation {
   if (requested.length > MAX_LI) {
@@ -73,10 +79,33 @@ export function hrcAllocate(requested: LieutenantPlan[]): Allocation {
   }
 
   if (totalAgents > MAX_AGENTS_TOTAL) {
-    return scaleToCap(lieutenants);
+    const scaled = scaleToCap(lieutenants);
+    if (!scaled.ok) return scaled;
+    const split = allocateSplitters(scaled.lieutenants);
+    if (!split.ok) {
+      return { ok: false, paused: true, reason: split.reason };
+    }
+    return {
+      ok: true,
+      paused: false,
+      lieutenants: scaled.lieutenants,
+      totalAgents: scaled.totalAgents,
+      splitAllocation: split,
+    };
   }
 
-  return { ok: true, paused: false, lieutenants, totalAgents };
+  const split = allocateSplitters(lieutenants);
+  if (!split.ok) {
+    return { ok: false, paused: true, reason: split.reason };
+  }
+
+  return {
+    ok: true,
+    paused: false,
+    lieutenants,
+    totalAgents,
+    splitAllocation: split,
+  };
 }
 
 function clampAgents(requested: number, already: number): number {
@@ -97,7 +126,17 @@ function scaleToCap(lieutenants: LieutenantPlan[]): Allocation {
     }
     i += 1;
   }
-  return { ok: true, paused: false, lieutenants: scaled, totalAgents: total };
+  const split = allocateSplitters(scaled);
+  if (!split.ok) {
+    return { ok: false, paused: true, reason: split.reason };
+  }
+  return {
+    ok: true,
+    paused: false,
+    lieutenants: scaled,
+    totalAgents: total,
+    splitAllocation: split,
+  };
 }
 
 /** Software lock: only one worker may edit a given file at a time. */

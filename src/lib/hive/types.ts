@@ -1,4 +1,4 @@
-export type Role = "MC" | "HRC" | "RO" | "Li" | "Agent";
+export type Role = "MC" | "HRC" | "RO" | "Splitter" | "Li" | "Agent";
 
 export type RunPhase =
   | "idle"
@@ -66,6 +66,17 @@ export type LieutenantState = {
   permissionGranted: boolean;
   agents: AgentState[];
   status: "summoning" | "working" | "reviewing" | "done" | "failed";
+  /** Which physical Splitter is role-playing this Li */
+  splitterId?: string;
+};
+
+/** One physical ~7B model managed by HRC. */
+export type SplitterState = {
+  id: string; // S1 … S5
+  status: "summoning" | "working" | "reviewing" | "done" | "failed";
+  activity: string;
+  /** Logical LIs this Splitter is currently role-playing */
+  lieutenants: LieutenantState[];
 };
 
 export type ExecStatus = {
