@@ -5,6 +5,7 @@ import { AppShell } from "@/components/hive/app-shell";
 import "../src/styles.css";
 import {
   markBreadcrumbClean,
+  registerCrash,
   subscribeModelStatus,
   takeLastBreadcrumb,
 } from "@/lib/hive/local-model";
@@ -92,10 +93,10 @@ try {
 window.addEventListener("pagehide", markBreadcrumbClean);
 const lastRun = takeLastBreadcrumb();
 if (lastRun && !lastRun.clean) {
-  const hint =
-    lastRun.device?.startsWith("webgpu")
-      ? "If it keeps happening, add ?device=wasm to the web address. That is slower but avoids the GPU."
-      : "This usually means the phone ran out of memory while running the model.";
+  const { model, movedDown } = registerCrash();
+  const hint = movedDown
+    ? `Switching to a smaller model (${model.name}) for the next try. Send your message again.`
+    : "This is already the smallest model, so this device may not be able to run models in the browser.";
   setTimeout(() => {
     toast.warning(`Hive reloaded while ${lastRun.stage}${lastRun.device ? ` (${lastRun.device})` : ""}. ${hint}`, {
       duration: 20000,
@@ -110,12 +111,12 @@ subscribeModelStatus((status) => {
     const pct = Math.round(status.progress * 100);
     if (pct !== lastPct) {
       lastPct = pct;
-      toast.loading(`Loading Qwen… ${pct}%`, { id: "qwen-load" });
+      toast.loading(`Loading ${status.model ?? "the model"}… ${pct}%`, { id: "model-load" });
     }
   } else if (status.stage === "ready") {
-    toast.success("Qwen is ready", { id: "qwen-load", duration: 2500 });
+    toast.success(`${status.model ?? "The model"} is ready`, { id: "model-load", duration: 2500 });
   } else if (status.stage === "error") {
-    toast.dismiss("qwen-load");
+    toast.dismiss("model-load");
   }
 });
 

@@ -1,9 +1,11 @@
 /**
  * On-device model runner for Hive (browser only).
  *
- * Runs onnx-community/Qwen2.5-0.5B-Instruct with Transformers.js. No API key,
- * no server round-trip: the weights are downloaded once by the browser, cached,
- * and executed on WebGPU when available (falling back to WASM/CPU).
+ * Runs a small instruction-tuned model with Transformers.js: Qwen2.5-0.5B where
+ * the device can take it, stepping down to SmolLM2-360M / SmolLM2-135M on phones
+ * that crash while loading. No API key, no server round-trip: the weights are
+ * downloaded once by the browser, cached, and executed on WebGPU when available
+ * (falling back to WASM/CPU).
  *
  * Transformers.js is loaded from a pinned CDN URL at runtime instead of being
  * bundled. Its Node build pulls in native onnxruntime-node binaries, which the
@@ -11,7 +13,15 @@
  * graph entirely. It is only ever executed in the browser.
  */
 
-export const MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
+export type ModelSpec = { id: string; name: string };
+
+/** Largest to smallest. A crash while loading or running moves down one rung. */
+export const MODEL_LADDER: ModelSpec[] = [
+  { id: "onnx-community/Qwen2.5-0.5B-Instruct", name: "Qwen2.5-0.5B" },
+  { id: "HuggingFaceTB/SmolLM2-360M-Instruct", name: "SmolLM2-360M" },
+  { id: "HuggingFaceTB/SmolLM2-135M-Instruct", name: "SmolLM2-135M" },
+];
+const LAST_RUNG = MODEL_LADDER.length - 1;
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0";
 
 export type LocalChatMessage = {
@@ -21,7 +31,7 @@ export type LocalChatMessage = {
 
 export type LocalDevice = "webgpu" | "wasm";
 export type LocalDtype = "q4" | "q4f16" | "q8";
-export type LocalBackend = { device: LocalDevice; dtype: LocalDtype };
+export type LocalBackend = { device: LocalDevice; dtype: LocalDtype; model: ModelSpec };
 
 type Generator = (
   messages: LocalChatMessage[],
@@ -57,10 +67,12 @@ export type ModelStatus = {
   /** 0..1 download progress across all model files (approximate). */
   progress: number;
   device: LocalDevice | null;
+  /** Display name of the model being loaded or running. */
+  model: string | null;
   error: string | null;
 };
 
-let status: ModelStatus = { stage: "idle", progress: 0, device: null, error: null };
+let status: ModelStatus = { stage: "idle", progress: 0, device: null, model: null, error: null };
 const listeners = new Set<(s: ModelStatus) => void>();
 
 function setStatus(patch: Partial<ModelStatus>) {
@@ -84,28 +96,76 @@ export function localModelSupported(): boolean {
   return typeof window !== "undefined" && typeof WebAssembly !== "undefined";
 }
 
+const RUNG_KEY = "hive-model-rung";
+const MODEL_ALIASES: Record<string, number> = { qwen: 0, "360m": 1, "135m": 2 };
+
 /**
- * Which backend/model-file combinations to try, in order.
- *
- * iPhones and iPads get the CPU (WASM) backend with the 8-bit model file: it is
- * a few hundred MB smaller than the 4-bit file, and loading the 4-bit file
- * crashed Safari's tab. Everything else keeps 4-bit, preferring WebGPU.
- *
- * Overrides on the page address: `?device=wasm` and `?dtype=q4|q4f16|q8`.
+ * Which rung of MODEL_LADDER to use. iPhones and iPads start one step down,
+ * because Qwen2.5-0.5B crashed Safari's tab while starting. A stored rung (raised
+ * after a crash) can only move further down. `?model=qwen|360m|135m` overrides.
  */
-export function pickBackends(search: string, hasWebGpu: boolean, ios: boolean): LocalBackend[] {
+export function effectiveRung(search: string, ios: boolean, stored: number): number {
+  const forced = new URLSearchParams(search).get("model");
+  if (forced && forced in MODEL_ALIASES) return MODEL_ALIASES[forced];
+  return Math.min(LAST_RUNG, Math.max(ios ? 1 : 0, stored));
+}
+
+/**
+ * Which model/backend/model-file combinations to try, in order.
+ *
+ * iOS uses the CPU (WASM) backend. On other devices WebGPU comes first with a
+ * WASM fallback. Overrides on the page address: `?device=wasm`,
+ * `?dtype=q4|q4f16|q8`, `?model=qwen|360m|135m`.
+ */
+export function pickBackends(
+  search: string,
+  hasWebGpu: boolean,
+  ios: boolean,
+  storedRung = 0,
+): LocalBackend[] {
   const params = new URLSearchParams(search);
-  const forcedDevice = params.get("device");
+  const model = MODEL_LADDER[effectiveRung(search, ios, storedRung)];
   const forcedDtype = params.get("dtype");
   const dtype: LocalDtype | null =
     forcedDtype === "q4" || forcedDtype === "q4f16" || forcedDtype === "q8" ? forcedDtype : null;
 
-  const wasmOnly = forcedDevice === "wasm" || ios || !hasWebGpu;
-  if (wasmOnly) return [{ device: "wasm", dtype: dtype ?? (ios ? "q8" : "q4") }];
+  const wasmOnly = params.get("device") === "wasm" || ios || !hasWebGpu;
+  // Qwen on an iPhone uses the smaller 8-bit file; everything else uses 4-bit.
+  const wasmDefault: LocalDtype = ios && model === MODEL_LADDER[0] ? "q8" : "q4";
+  if (wasmOnly) return [{ device: "wasm", dtype: dtype ?? wasmDefault, model }];
   return [
-    { device: "webgpu", dtype: dtype ?? "q4" },
-    { device: "wasm", dtype: dtype === "q4f16" ? "q4" : (dtype ?? "q4") },
+    { device: "webgpu", dtype: dtype ?? "q4", model },
+    { device: "wasm", dtype: dtype === "q4f16" ? "q4" : (dtype ?? "q4"), model },
   ];
+}
+
+function readStoredRung(): number {
+  try {
+    const n = Number(localStorage.getItem(RUNG_KEY));
+    return Number.isInteger(n) && n >= 0 ? Math.min(n, LAST_RUNG) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function detectIOS(): boolean {
+  return isIOS(navigator.userAgent, navigator.platform, navigator.maxTouchPoints ?? 0);
+}
+
+/**
+ * Call once when the previous session died mid-run. Moves one rung down the
+ * model ladder for next time (the choice is remembered in this browser).
+ */
+export function registerCrash(): { model: ModelSpec; movedDown: boolean } {
+  const search = typeof location === "undefined" ? "" : location.search;
+  const current = effectiveRung(search, detectIOS(), readStoredRung());
+  const next = Math.min(current + 1, LAST_RUNG);
+  try {
+    localStorage.setItem(RUNG_KEY, String(next));
+  } catch {
+    // best-effort
+  }
+  return { model: MODEL_LADDER[next], movedDown: next > current };
 }
 
 export function isIOS(ua: string, platform: string, touchPoints: number): boolean {
@@ -124,8 +184,12 @@ async function candidateBackends(): Promise<LocalBackend[]> {
       hasWebGpu = false;
     }
   }
-  const ios = isIOS(navigator.userAgent, navigator.platform, navigator.maxTouchPoints ?? 0);
-  return pickBackends(typeof location === "undefined" ? "" : location.search, hasWebGpu, ios);
+  return pickBackends(
+    typeof location === "undefined" ? "" : location.search,
+    hasWebGpu,
+    detectIOS(),
+    readStoredRung(),
+  );
 }
 
 /** Breadcrumb text for a download fraction (0..1), bucketed so it is written rarely. */
@@ -229,13 +293,14 @@ function loadModel(): Promise<Loaded> {
 
     let lastError: unknown = null;
     for (const backend of await candidateBackends()) {
-      const { device, dtype } = backend;
-      const label = `${device}/${dtype}`;
+      const { device, dtype, model } = backend;
+      const label = `${model.name} ${device}/${dtype}`;
       try {
         attempt = label;
         lastLabel = "";
+        setStatus({ model: model.name, progress: 0 });
         setBreadcrumb("loading the model", label);
-        const generator = await mod.pipeline("text-generation", MODEL_ID, {
+        const generator = await mod.pipeline("text-generation", model.id, {
           device,
           dtype,
           progress_callback: onProgress,

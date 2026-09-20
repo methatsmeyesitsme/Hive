@@ -1,4 +1,9 @@
-import { generateChat, localModelSupported, MODEL_ID, type LocalChatMessage } from "./local-model";
+import {
+  generateChat,
+  getModelStatus,
+  localModelSupported,
+  type LocalChatMessage,
+} from "./local-model";
 import {
   buildPlan,
   extractHtml,
@@ -173,7 +178,7 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
     const detail = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
-      error: `Hive could not start the on-device model (${MODEL_ID}): ${clip(detail, 200)}`,
+      error: `Hive could not start the on-device model (${getModelStatus().model ?? "not loaded"}): ${clip(detail, 200)}`,
     };
   }
 }
