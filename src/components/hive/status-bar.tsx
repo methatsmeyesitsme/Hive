@@ -1,9 +1,12 @@
+import { MODEL_CLASS } from "@/lib/hive/constants";
 import { useHiveStore } from "@/lib/hive/store";
+import type { SplitterState } from "@/lib/hive/types";
 import { cn } from "@/lib/utils";
 
 export function StatusBar({ onOpenStatus }: { onOpenStatus: () => void }) {
   const status = useHiveStore((s) => s.status);
   const phase = useHiveStore((s) => s.phase);
+  const splitters = useHiveStore((s) => s.splitters);
   const live =
     phase !== "idle" &&
     phase !== "complete" &&
@@ -20,8 +23,18 @@ export function StatusBar({ onOpenStatus }: { onOpenStatus: () => void }) {
       <StatusLine role="MC" text={status.mc} live={live} />
       <StatusLine role="HRC" text={status.hrc} live={live} />
       <StatusLine role="RO" text={status.ro} live={live} />
+      {splitters.length > 0 && <StatusLine role="SP" text={splitterSummary(splitters)} live={live} />}
     </button>
   );
+}
+
+function splitterSummary(splitters: SplitterState[]): string {
+  const n = splitters.length;
+  if (splitters.every((s) => s.status === "summoning" && s.lieutenants.length === 0)) {
+    return `Loading ${n} × ${MODEL_CLASS.splitter}`;
+  }
+  const done = splitters.filter((s) => s.status === "done").length;
+  return done === n ? `${n} × ${MODEL_CLASS.splitter} · done` : `${n} × ${MODEL_CLASS.splitter} · ${done}/${n} done`;
 }
 
 function StatusLine({

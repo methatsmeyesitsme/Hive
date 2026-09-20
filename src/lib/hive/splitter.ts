@@ -9,8 +9,8 @@
  *   Li → Agents → Li reviews → result returned to MC
  */
 
-import { MAX_AGENTS_PER_LI, MAX_LI, MAX_SPLITTERS, LI_LETTERS } from "./constants";
-import type { LieutenantPlan } from "./types";
+import { MAX_AGENTS_PER_LI, MAX_LI, MAX_SPLITTERS, LI_LETTERS } from "./constants.ts";
+import type { LieutenantPlan } from "./types.ts";
 
 export type LogicalAgent = {
   id: string;

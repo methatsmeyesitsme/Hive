@@ -275,7 +275,11 @@ function loadModel(): Promise<Loaded> {
       }
     };
 
-    const mod = (await import(/* @vite-ignore */ TRANSFORMERS_URL)) as TransformersModule;
+    // `__HIVE_TRANSFORMERS__` lets tests supply a fake library; unset in normal use.
+    const injected = (globalThis as { __HIVE_TRANSFORMERS__?: TransformersModule })
+      .__HIVE_TRANSFORMERS__;
+    const mod =
+      injected ?? ((await import(/* @vite-ignore */ TRANSFORMERS_URL)) as TransformersModule);
 
     // Memory-saving defaults for phones. Escape hatches on the page address:
     //   ?cache=off   skip the browser cache copy of the model files

@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { MAX_AGENTS_TOTAL } from "@/lib/hive/constants";
+import { MAX_AGENTS_TOTAL, MAX_SPLITTERS, MODEL_CLASS } from "@/lib/hive/constants";
 import { useHiveStore } from "@/lib/hive/store";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,7 @@ export function StatusPanel({
 }) {
   const status = useHiveStore((s) => s.status);
   const lieutenants = useHiveStore((s) => s.lieutenants);
+  const splitters = useHiveStore((s) => s.splitters);
   const agentTotal = useHiveStore((s) => s.agentTotal);
   const phase = useHiveStore((s) => s.phase);
   const fileLocks = useHiveStore((s) => s.fileLocks);
@@ -80,6 +81,41 @@ export function StatusPanel({
 
           <div>
             <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-dim">
+              Splitters
+              <span className="ml-2 normal-case tracking-normal text-dim/80">
+                ~{MODEL_CLASS.splitter} · {splitters.length}/{MAX_SPLITTERS}
+              </span>
+            </p>
+            {splitters.length === 0 ? (
+              <p className="text-xs text-dim">No Splitters active</p>
+            ) : (
+              <ul className="space-y-2" aria-label="Splitters">
+                {splitters.map((sp) => (
+                  <li
+                    key={sp.id}
+                    className="rounded-md border border-line bg-navy-3 px-3 py-2"
+                    data-testid={`splitter-${sp.id}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs text-honey">{sp.id}</span>
+                      <Badge tone={sp.status === "done" ? "ok" : "mist"}>{sp.status}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-mist">{sp.activity}</p>
+                    <p className="mt-0.5 text-[11px] text-dim">
+                      {sp.lieutenants.length === 0
+                        ? "No Li yet"
+                        : `Role-playing ${sp.lieutenants.map((l) => `Li ${l.letter}`).join(", ")}`}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <Separator />
+
+          <div>
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-dim">
               Active Li
             </p>
             {lieutenants.length === 0 ? (
@@ -89,7 +125,10 @@ export function StatusPanel({
                 {lieutenants.map((li) => (
                   <li key={li.letter} className="rounded-md border border-line bg-navy-3 px-3 py-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs text-honey">Li {li.letter}</span>
+                      <span className="font-mono text-xs text-honey">
+                        Li {li.letter}
+                        {li.splitterId && <span className="ml-2 text-dim">on {li.splitterId}</span>}
+                      </span>
                       <Badge tone={li.status === "done" ? "ok" : "mist"}>{li.status}</Badge>
                     </div>
                     <p className="mt-1 text-xs text-mist">{li.activity}</p>

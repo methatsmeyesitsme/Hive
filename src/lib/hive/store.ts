@@ -10,6 +10,8 @@ import {
 } from "../github/api";
 import { STORAGE_KEY } from "./constants";
 import { acquireLock, estimateSwarm, hrcAllocate } from "./limits";
+import type { SplitterPlan } from "./splitter";
+import { buildSplitterStates, listSplitterIds, splitterOfLi } from "./splitter-state";
 import type {
   Artifact,
   Attachment,
@@ -23,6 +25,7 @@ import type {
   MemoryEntry,
   Project,
   RunPhase,
+  SplitterState,
 } from "./types";
 import { nid } from "../utils";
 
@@ -45,6 +48,8 @@ type HiveState = {
   phase: RunPhase;
   status: ExecStatus;
   lieutenants: LieutenantState[];
+  /** Physical ~7B Splitters, each role-playing one or more Li. */
+  splitters: SplitterState[];
   agentTotal: number;
   fileLocks: FileLock[];
   pauseReason: string | null;
@@ -169,6 +174,7 @@ export const useHiveStore = create<HiveState>()(
       phase: "idle",
       status: idleStatus,
       lieutenants: [],
+          splitters: [],
       agentTotal: 0,
       fileLocks: [],
       pauseReason: null,
@@ -217,6 +223,7 @@ export const useHiveStore = create<HiveState>()(
           phase: "idle",
           status: idleStatus,
           lieutenants: [],
+          splitters: [],
           agentTotal: 0,
           previewOpen: false,
           previewRunning: false,
@@ -242,6 +249,7 @@ export const useHiveStore = create<HiveState>()(
           phase: "idle",
           status: idleStatus,
           lieutenants: [],
+          splitters: [],
           agentTotal: 0,
           fileLocks: [],
           pauseReason: null,
@@ -262,6 +270,7 @@ export const useHiveStore = create<HiveState>()(
           phase: "idle",
           status: idleStatus,
           lieutenants: [],
+          splitters: [],
           agentTotal: 0,
           fileLocks: [],
           pauseReason: null,
@@ -346,6 +355,7 @@ export const useHiveStore = create<HiveState>()(
             ro: state.githubConnected ? "Reviewing repository context" : "Standing by",
           },
           lieutenants: [],
+          splitters: [],
           agentTotal: 0,
           fileLocks: [],
           audits: [
@@ -381,6 +391,14 @@ export const useHiveStore = create<HiveState>()(
           },
         });
 
+        // Splitter bookkeeping for this run (filled in once HRC allocates).
+        let splitPlans: SplitterPlan[] = [];
+        let splitOf = new Map<string, string>();
+        let tick = 0;
+        const syncSplitters = () =>
+          set({ splitters: buildSplitterStates(splitPlans, get().lieutenants, tick) });
+        const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
         const fail = (message: string) => {
           if (signal.aborted) return;
           const sys: ChatMessage = {
@@ -394,11 +412,21 @@ export const useHiveStore = create<HiveState>()(
             messages: [...p.messages, sys],
             updatedAt: Date.now(),
           }));
+          lockMap.clear();
           set({
             phase: "error",
             status: { mc: "Could not complete the run", hrc: "Standing by", ro: "Standing by" },
             audits: [audit("MC", "Run failed"), ...get().audits].slice(0, 80),
+            agentTotal: 0,
+            fileLocks: [],
+            lieutenants: get().lieutenants.map((li) => ({
+              ...li,
+              status: "failed" as const,
+              activity: "Stopped",
+              agents: li.agents.map((a) => ({ ...a, status: "failed" as const })),
+            })),
           });
+          syncSplitters();
         };
 
         try {
@@ -433,17 +461,44 @@ export const useHiveStore = create<HiveState>()(
             fail(pre.reason);
             return;
           }
+          // HRC packs the Li onto 1-5 physical Splitters (~7B models). A Splitter
+          // role-plays several Li by keeping a separate conversation for each.
+          splitPlans = pre.splitAllocation.splitters;
+          splitOf = splitterOfLi(splitPlans);
+
           set({
             phase: "allocating",
             status: {
               mc: "Waiting for swarm readiness",
-              hrc: `Allocating ${pre.totalAgents} agents across ${pre.lieutenants.length} Li`,
+              hrc: `Allocating ${pre.totalAgents} agents across ${pre.lieutenants.length} Li on ${plural(splitPlans.length, "Splitter")}`,
               ro: pre.lieutenants.length > 2 ? "Preparing research channels" : "Standing by",
             },
+            audits: [
+              audit(
+                "HRC",
+                `Planned ${plural(splitPlans.length, "Splitter")} for ${plural(pre.lieutenants.length, "Li")}`,
+              ),
+              ...get().audits,
+            ].slice(0, 80),
           });
 
           await sleep(700, signal);
-          set({ phase: "summoning", status: { ...get().status, hrc: "Summoning Li" } });
+          set({
+            phase: "summoning",
+            status: { ...get().status, hrc: `Activating ${plural(splitPlans.length, "Splitter")}` },
+            splitters: splitPlans.map((sp) => ({
+              id: sp.id,
+              status: "summoning" as const,
+              activity: "Loading 7B model",
+              lieutenants: [],
+            })),
+            audits: [
+              audit("HRC", `Activated ${listSplitterIds(splitPlans)}`),
+              ...get().audits,
+            ].slice(0, 80),
+          });
+          await sleep(450, signal);
+          set({ status: { ...get().status, hrc: "Summoning Li" } });
 
           const summoned: LieutenantState[] = [];
           for (const li of pre.lieutenants) {
@@ -456,18 +511,23 @@ export const useHiveStore = create<HiveState>()(
               permissionGranted: true,
               agents: [],
               status: "summoning",
+              splitterId: splitOf.get(li.letter),
             });
             set({
               lieutenants: [...summoned],
               status: {
                 ...get().status,
-                hrc: `Summoned Li ${li.letter} · allowance ${li.agentCount}`,
+                hrc: `Summoned Li ${li.letter} on ${splitOf.get(li.letter) ?? "a Splitter"} · allowance ${li.agentCount}`,
               },
               audits: [
-                audit("HRC", `Summoned Li ${li.letter} with allowance ${li.agentCount}`),
+                audit(
+                  "HRC",
+                  `Summoned Li ${li.letter} on ${splitOf.get(li.letter) ?? "a Splitter"} with allowance ${li.agentCount}`,
+                ),
                 ...get().audits,
               ].slice(0, 80),
             });
+            syncSplitters();
             await sleep(220, signal);
           }
 
@@ -475,11 +535,16 @@ export const useHiveStore = create<HiveState>()(
           for (let i = 0; i < summoned.length; i++) {
             const li = summoned[i];
             const plan = pre.lieutenants[i];
+            const logical = splitPlans
+              .flatMap((sp) => sp.lieutenants)
+              .find((l) => l.letter === li.letter);
             for (let n = 0; n < li.agentAllowance; n++) {
               if (signal.aborted) return;
-              const agentId = nid("ag");
-              const file = plan.files[n % Math.max(1, plan.files.length)] || `work/${li.letter}/${n + 1}`;
-              const ownerLabel = `Li ${li.letter} · agent ${n + 1}`;
+              const agentId = logical?.agents[n]?.id ?? nid("ag");
+              const file =
+                logical?.agents[n]?.ownedFiles[0] ??
+                (plan.files[n % Math.max(1, plan.files.length)] || `work/${li.letter}/${n + 1}`);
+              const ownerLabel = `${li.splitterId ? `${li.splitterId} · ` : ""}Li ${li.letter} · agent ${n + 1}`;
               acquireLock(lockMap, file, agentId, ownerLabel);
               li.agents.push({
                 id: agentId,
@@ -505,6 +570,7 @@ export const useHiveStore = create<HiveState>()(
                   ro: get().status.ro,
                 },
               });
+              syncSplitters();
               await sleep(70, signal);
             }
           }
@@ -547,6 +613,7 @@ export const useHiveStore = create<HiveState>()(
               phase: "paused",
               pauseReason: allocated.reason,
               lieutenants: [],
+          splitters: [],
               agentTotal: 0,
               status: {
                 mc: "Production paused",
@@ -556,6 +623,22 @@ export const useHiveStore = create<HiveState>()(
             });
             fail(allocated.reason);
             return;
+          }
+
+          // HRC re-splits the Li across Splitters using MC's real plan.
+          const previousSplitters = splitPlans.length;
+          splitPlans = allocated.splitAllocation.splitters;
+          splitOf = splitterOfLi(splitPlans);
+          if (splitPlans.length !== previousSplitters) {
+            set({
+              audits: [
+                audit(
+                  "HRC",
+                  `Re-split ${plural(allocated.lieutenants.length, "Li")} across ${plural(splitPlans.length, "Splitter")}`,
+                ),
+                ...get().audits,
+              ].slice(0, 80),
+            });
           }
 
           // Merge real designated objectives onto the live swarm.
@@ -568,7 +651,10 @@ export const useHiveStore = create<HiveState>()(
                 status: "working" as const,
               })) ??
               Array.from({ length: li.agentCount }, (_, n) => ({
-                id: nid("ag"),
+                id:
+                  splitPlans
+                    .flatMap((sp) => sp.lieutenants)
+                    .find((l) => l.letter === li.letter)?.agents[n]?.id ?? nid("ag"),
                 liLetter: li.letter,
                 assignment: li.objective,
                 status: "working" as const,
@@ -582,6 +668,7 @@ export const useHiveStore = create<HiveState>()(
               permissionGranted: true,
               agents,
               status: "working" as const,
+              splitterId: splitOf.get(li.letter),
             };
           });
           const liveTotal = merged.reduce((s, l) => s + l.agents.length, 0);
@@ -590,12 +677,13 @@ export const useHiveStore = create<HiveState>()(
             agentTotal: liveTotal,
             status: {
               mc: result.plan.objective.slice(0, 64),
-              hrc: `Managing ${liveTotal} active agents`,
+              hrc: `Managing ${liveTotal} agents on ${plural(splitPlans.length, "Splitter")}`,
               ro: result.plan.researchNeeded
                 ? `Researching ${result.plan.researchTopic || "external context"}`
                 : "Standing by",
             },
           });
+          syncSplitters();
 
           if (result.plan.researchNeeded) {
             set({
@@ -627,6 +715,7 @@ export const useHiveStore = create<HiveState>()(
           const workTicks = 5;
           for (let t = 0; t < workTicks; t++) {
             if (signal.aborted) return;
+            tick = t;
             set((s) => ({
               lieutenants: s.lieutenants.map((li, i) => ({
                 ...li,
@@ -650,6 +739,7 @@ export const useHiveStore = create<HiveState>()(
                 })),
               })),
             }));
+            syncSplitters();
             await sleep(420, signal);
           }
 
@@ -667,6 +757,7 @@ export const useHiveStore = create<HiveState>()(
               agents: li.agents.map((a) => ({ ...a, status: "done" })),
             })),
           });
+          syncSplitters();
           await sleep(700, signal);
 
           set({
@@ -687,6 +778,7 @@ export const useHiveStore = create<HiveState>()(
               ...get().audits,
             ].slice(0, 80),
           });
+          syncSplitters();
           await sleep(750, signal);
 
           lockMap.clear();
@@ -961,6 +1053,7 @@ export const useHiveStore = create<HiveState>()(
           phase: "idle",
           status: idleStatus,
           lieutenants: [],
+          splitters: [],
           agentTotal: 0,
           frozen: false,
           previewRunning: false,

@@ -1,6 +1,6 @@
-import { LI_LETTERS, MAX_AGENTS_PER_LI, MAX_AGENTS_TOTAL, MAX_LI } from "./constants";
-import { allocateSplitters, type SplitAllocation } from "./splitter";
-import type { LieutenantPlan } from "./types";
+import { LI_LETTERS, MAX_AGENTS_PER_LI, MAX_AGENTS_TOTAL, MAX_LI } from "./constants.ts";
+import { allocateSplitters, type SplitAllocation } from "./splitter.ts";
+import type { LieutenantPlan } from "./types.ts";
 
 export type Allocation =
   | {
