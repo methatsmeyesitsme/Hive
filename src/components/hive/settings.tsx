@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useHiveStore } from "@/lib/hive/store";
+import { APP_VERSION } from "@/lib/hive/version";
 import { toast } from "sonner";
 
 export function SettingsView() {
@@ -35,6 +36,9 @@ export function SettingsView() {
     <div className="flex h-full flex-col bg-navy">
       <header className="flex h-14 items-center border-b border-line px-5">
         <h1 className="font-display text-sm font-semibold tracking-tight">Settings</h1>
+        <span className="ml-auto font-mono text-xs text-dim" data-testid="app-version">
+          v{APP_VERSION}
+        </span>
       </header>
       <div className="mx-auto w-full max-w-xl flex-1 space-y-8 overflow-auto px-5 py-8">
         <section>
@@ -137,6 +141,16 @@ export function SettingsView() {
               </Button>
             </form>
           )}
+        </section>
+
+        <Separator />
+
+        <section>
+          <h2 className="font-display text-base font-semibold">About</h2>
+          <div className="mt-4 rounded-lg border border-line bg-navy-2 p-4">
+            <p className="text-xs text-dim">Version</p>
+            <p className="mt-1 font-mono text-sm text-fog">Hive v{APP_VERSION}</p>
+          </div>
         </section>
       </div>
     </div>
