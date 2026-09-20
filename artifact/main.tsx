@@ -3,6 +3,7 @@ import { Toaster, toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/hive/app-shell";
 import "../src/styles.css";
+import { markBreadcrumbClean, takeLastBreadcrumb } from "@/lib/hive/local-model";
 import "./artifact.css";
 
 type Downloads = { save: (req: { filename: string; data: Blob }) => Promise<unknown> };
@@ -81,6 +82,21 @@ try {
   });
 } catch {
   // leave the native clipboard in place
+}
+
+/** If the last session died mid-run, say where (best-effort diagnostics). */
+window.addEventListener("pagehide", markBreadcrumbClean);
+const lastRun = takeLastBreadcrumb();
+if (lastRun && !lastRun.clean) {
+  const hint =
+    lastRun.device === "webgpu"
+      ? "If it keeps happening, add ?device=wasm to the web address. That is slower but avoids the GPU."
+      : "This usually means the phone ran out of memory while running the model.";
+  setTimeout(() => {
+    toast.warning(`Hive reloaded while ${lastRun.stage}${lastRun.device ? ` (${lastRun.device})` : ""}. ${hint}`, {
+      duration: 20000,
+    });
+  }, 800);
 }
 
 createRoot(document.getElementById("root")!).render(

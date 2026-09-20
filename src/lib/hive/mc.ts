@@ -123,6 +123,7 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
     const briefOut = await generateChat(briefMessages(data), {
       maxNewTokens: 160,
       temperature: 0.3,
+      label: "the brief",
     });
     const brief = parseBrief(briefOut.text, data.prompt);
     const plan = {
@@ -144,6 +145,7 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
     const pageOut = await generateChat(buildMessages(data, brief, revisable), {
       maxNewTokens: budget,
       temperature: 0.5,
+      label: "the page",
     });
 
     const html = extractHtml(pageOut.text);
