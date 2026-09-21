@@ -49,20 +49,21 @@ describe("isRuntimeFailure", () => {
 });
 
 describe("recovering from a failing GPU session", () => {
-  it("a one-off WebGPU failure is fixed by restarting the session on WebGPU", async () => {
+  it("a single WebGPU failure falls back to the CPU backend", async () => {
     webgpuFailuresLeft = 1;
     const out = await ask();
-    assert.equal(out.text, "ok on webgpu");
-    assert.deepEqual(loads, ["webgpu", "webgpu"]);
+    assert.equal(out.text, "ok on wasm");
+    assert.equal(out.device, "wasm");
+    // First attempt webgpu (fails) → reset → load wasm (succeeds)
+    assert.deepEqual(loads, ["webgpu", "wasm"]);
     assert.equal(disposed, 1, "the broken session is disposed");
   });
 
-  it("two WebGPU failures in a row fall back to the CPU backend", async () => {
+  it("permanent WebGPU failure still lands on CPU", async () => {
     webgpuAlwaysFails = true;
     const out = await ask();
     assert.equal(out.text, "ok on wasm");
     assert.equal(out.device, "wasm");
-    assert.deepEqual(loads, ["webgpu", "webgpu", "webgpu", "wasm"]);
   });
 
   it("stays on the CPU session afterwards without reloading", async () => {
