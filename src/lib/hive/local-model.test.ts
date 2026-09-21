@@ -78,9 +78,9 @@ describe("progressLabel", () => {
 });
 
 describe("useLowMemory", () => {
-  it("is on for iPhone/iPad only by default", () => {
+  it("defaults on for stability (WebGPU + iOS)", () => {
     assert.equal(useLowMemory("", true), true);
-    assert.equal(useLowMemory("", false), false);
+    assert.equal(useLowMemory("", false), true);
   });
   it("?lowmem=on / off override", () => {
     assert.equal(useLowMemory("?lowmem=on", false), true);
