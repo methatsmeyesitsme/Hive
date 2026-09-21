@@ -8,6 +8,8 @@ let disposed = 0;
 let webgpuFailuresLeft = 0; // fail this many webgpu generations, then work
 let webgpuAlwaysFails = false;
 let boom = false;
+let abortWebgpuOnce = false;
+let emitHtml = false;
 
 Object.defineProperty(globalThis.navigator, "gpu", {
   value: { requestAdapter: async () => ({}) },
@@ -16,18 +18,60 @@ Object.defineProperty(globalThis.navigator, "gpu", {
 
 (globalThis as { __HIVE_TRANSFORMERS__?: unknown }).__HIVE_TRANSFORMERS__ = {
   env: {},
+  TextStreamer: class {
+    options: {
+      callback_function?: (text: string) => void;
+      token_callback_function?: () => void;
+    };
+    constructor(
+      _tokenizer: unknown,
+      options: {
+        callback_function?: (text: string) => void;
+        token_callback_function?: () => void;
+      },
+    ) {
+      this.options = options;
+    }
+  },
+  InterruptableStoppingCriteria: class {
+    interrupted = false;
+    interrupt() {
+      this.interrupted = true;
+    }
+  },
   pipeline: async (_task: string, _id: string, opts: { device: string }) => {
     loads.push(opts.device);
-    const generator = async (messages: { role: string; content: string }[]) => {
+    const generator = async (
+      messages: { role: string; content: string }[],
+      callOpts?: {
+        streamer?: { options: { callback_function?: (text: string) => void; token_callback_function?: () => void } };
+        stopping_criteria?: { interrupted?: boolean };
+      },
+    ) => {
       if (boom) throw new Error("boom: the request itself is bad");
+      if (opts.device === "webgpu" && abortWebgpuOnce) {
+        abortWebgpuOnce = false;
+        const err = new Error("The operation was aborted.");
+        err.name = "AbortError";
+        throw err;
+      }
       if (opts.device === "webgpu" && (webgpuAlwaysFails || webgpuFailuresLeft > 0)) {
         if (webgpuFailuresLeft > 0) webgpuFailuresLeft -= 1;
         throw new Error(
           "failed to call OrtRun(). ERROR_CODE: 1, ERROR_MESSAGE: providers/webgpu/buffer_manager.cc:643 BufferManager::Download",
         );
       }
-      return [{ generated_text: [...messages, { role: "assistant", content: `ok on ${opts.device}` }] }];
+      const text = emitHtml ? `ok on ${opts.device} </html>` : `ok on ${opts.device}`;
+      callOpts?.streamer?.options.callback_function?.(text);
+      callOpts?.streamer?.options.token_callback_function?.();
+      if (callOpts?.stopping_criteria?.interrupted) {
+        const err = new Error("The operation was aborted.");
+        err.name = "AbortError";
+        throw err;
+      }
+      return [{ generated_text: [...messages, { role: "assistant", content: text }] }];
     };
+    generator.tokenizer = {};
     generator.dispose = async () => {
       disposed += 1;
     };
@@ -35,7 +79,7 @@ Object.defineProperty(globalThis.navigator, "gpu", {
   },
 };
 
-const { generateChat, isRuntimeFailure } = await import("./local-model.ts");
+const { generateChat, isRuntimeFailure, isAbortError } = await import("./local-model.ts");
 const msgs = [{ role: "user" as const, content: "hi" }];
 const ask = () => generateChat(msgs, { maxNewTokens: 5 });
 
@@ -45,6 +89,13 @@ describe("isRuntimeFailure", () => {
     assert.equal(isRuntimeFailure(new Error("GPUDevice was lost")), true);
     assert.equal(isRuntimeFailure("out of memory"), true);
     assert.equal(isRuntimeFailure(new Error("boom: the request itself is bad")), false);
+  });
+  it("treats WebGPU abort as a runtime failure so we fall back to CPU", () => {
+    const abort = new Error("The operation was aborted.");
+    abort.name = "AbortError";
+    assert.equal(isAbortError(abort), true);
+    assert.equal(isRuntimeFailure(abort), true);
+    assert.equal(isRuntimeFailure(new Error("The operation was aborted")), true);
   });
 });
 
@@ -57,6 +108,24 @@ describe("recovering from a failing GPU session", () => {
     // First attempt webgpu (fails) → reset → load wasm (succeeds)
     assert.deepEqual(loads, ["webgpu", "wasm"]);
     assert.equal(disposed, 1, "the broken session is disposed");
+  });
+
+  it("a WebGPU abort falls back to the CPU backend", async () => {
+    abortWebgpuOnce = true;
+    const out = await ask();
+    assert.equal(out.text, "ok on wasm");
+    assert.equal(out.device, "wasm");
+  });
+
+  it("keeps the page when early-stop interrupt surfaces as AbortError", async () => {
+    emitHtml = true;
+    const out = await generateChat(msgs, {
+      maxNewTokens: 5,
+      stopWhen: (text) => /<\/html/i.test(text),
+    });
+    emitHtml = false;
+    assert.match(out.text, /ok on wasm/);
+    assert.match(out.text, /<\/html>/);
   });
 
   it("permanent WebGPU failure still lands on CPU", async () => {

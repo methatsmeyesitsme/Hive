@@ -252,6 +252,7 @@ function loadModel(): Promise<Loaded> {
   if (loading) return loading;
 
   loading = (async () => {
+    if (resetInFlight) await resetInFlight;
     const tStart = perf.now();
     let tDownloadDone: number | null = null;
     setStatus({ stage: "loading", progress: 0, error: null });
@@ -333,6 +334,9 @@ function loadModel(): Promise<Loaded> {
       } catch (err) {
         lastError = err;
         files.clear();
+        // A WebGPU abort/OrtRun during load means the GPU session is already dead —
+        // skip further WebGPU attempts in this page lifetime.
+        if (device === "webgpu" && isRuntimeFailure(err)) avoidWebGpu = true;
       }
     }
     throw lastError ?? new Error("No usable compute backend");
@@ -369,24 +373,46 @@ export type GenerateOptions = {
 };
 
 /** Errors from the runtime itself (a lost GPU device, a failed buffer download), not from the request. */
+export function isAbortError(err: unknown): boolean {
+  if (typeof err === "object" && err !== null && "name" in err && (err as { name: string }).name === "AbortError") {
+    return true;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return /operation was aborted|AbortError/i.test(message);
+}
+
 export function isRuntimeFailure(err: unknown): boolean {
+  if (isAbortError(err)) return true;
   const message = err instanceof Error ? err.message : String(err);
   return /OrtRun|onnxruntime|buffer_manager|webgpu|GPUDevice|device (was )?lost|out of memory/i.test(message);
 }
 
+/** In-flight dispose so a new load never overlaps a teardown (that abort is "The operation was aborted"). */
+let resetInFlight: Promise<void> | null = null;
+
 /** Throw away the current session so the next call loads a fresh one. */
 async function resetModel(): Promise<void> {
-  const old = loading;
-  loading = null;
-  setStatus({ stage: "idle", progress: 0, error: null });
+  if (resetInFlight) return resetInFlight;
+  resetInFlight = (async () => {
+    const old = loading;
+    loading = null;
+    setStatus({ stage: "idle", progress: 0, error: null });
+    try {
+      const loaded = await old;
+      await Promise.race([
+        Promise.resolve(loaded?.generator.dispose?.()),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+    } catch {
+      // the old session may already be unusable
+    }
+    // Give WebGPU a beat to release buffers before the next session starts.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  })();
   try {
-    const loaded = await old;
-    await Promise.race([
-      Promise.resolve(loaded?.generator.dispose?.()),
-      new Promise((resolve) => setTimeout(resolve, 1500)),
-    ]);
-  } catch {
-    // the old session may already be unusable
+    await resetInFlight;
+  } finally {
+    resetInFlight = null;
   }
 }
 
@@ -420,9 +446,9 @@ export function generateChat(
     let tFirst: number | null = null;
     let tokens = 0;
     let stoppedEarly = false;
+    let soFar = "";
     if (mod.TextStreamer && mod.InterruptableStoppingCriteria && generator.tokenizer) {
       const stopper = new mod.InterruptableStoppingCriteria();
-      let soFar = "";
       callOptions.stopping_criteria = stopper;
       callOptions.streamer = new mod.TextStreamer(generator.tokenizer, {
         skip_prompt: true,
@@ -442,24 +468,35 @@ export function generateChat(
       });
     }
 
-    const out = await generator(messages, callOptions);
-    const t1 = perf.now();
-    const text = out[0]?.generated_text?.at(-1)?.content ?? "";
-    writeCrumb(null);
+    const finish = (text: string) => {
+      const t1 = perf.now();
+      writeCrumb(null);
+      const decodeMs = tFirst === null ? null : t1 - tFirst;
+      perf.addGen({
+        label: options.label ?? "reply",
+        totalMs: t1 - t0,
+        ttftMs: tFirst === null ? null : tFirst - t0,
+        decodeMs,
+        tokens,
+        tokPerSec: decodeMs !== null && decodeMs > 0 && tokens > 1 ? (tokens - 1) / (decodeMs / 1000) : null,
+        maxNew,
+        promptChars: messages.reduce((n, m) => n + m.content.length, 0),
+        stoppedEarly,
+      });
+      return { text, device };
+    };
 
-    const decodeMs = tFirst === null ? null : t1 - tFirst;
-    perf.addGen({
-      label: options.label ?? "reply",
-      totalMs: t1 - t0,
-      ttftMs: tFirst === null ? null : tFirst - t0,
-      decodeMs,
-      tokens,
-      tokPerSec: decodeMs !== null && decodeMs > 0 && tokens > 1 ? (tokens - 1) / (decodeMs / 1000) : null,
-      maxNew,
-      promptChars: messages.reduce((n, m) => n + m.content.length, 0),
-      stoppedEarly,
-    });
-    return { text, device };
+    try {
+      const out = await generator(messages, callOptions);
+      return finish(out[0]?.generated_text?.at(-1)?.content ?? soFar);
+    } catch (err) {
+      // Interrupting once </html> is in the stream often surfaces as AbortError on WebGPU.
+      // The page is already complete — return it instead of failing the run.
+      if (isAbortError(err) && soFar && (stoppedEarly || options.stopWhen?.(soFar))) {
+        return finish(soFar);
+      }
+      throw err;
+    }
   };
 
   const run = async () => {

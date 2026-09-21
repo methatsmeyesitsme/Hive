@@ -241,9 +241,12 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    const aborted = /operation was aborted|AbortError/i.test(detail);
     return {
       ok: false,
-      error: `Hive could not start the on-device model (${getModelStatus().model ?? "not loaded"}): ${clip(detail, 200)}`,
+      error: aborted
+        ? "Hive had to restart the on-device model. Send the request again — it will keep going on CPU if the GPU session dropped."
+        : `Hive could not start the on-device model (${getModelStatus().model ?? "not loaded"}): ${clip(detail, 200)}`,
     };
   }
 }
