@@ -116,7 +116,7 @@ export function LeftSidebar({
                     setDeleteId(p.id);
                   }}
                   className={cn(
-                    "absolute right-1 top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-dim transition-opacity hover:bg-navy-4 hover:text-danger focus-visible:opacity-100",
+                    "z-10 absolute right-1 top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-dim transition-opacity hover:bg-navy-4 hover:text-danger focus-visible:opacity-100",
                     mobile
                       ? "size-9"
                       : "size-9 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",

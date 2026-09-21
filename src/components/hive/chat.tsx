@@ -1,4 +1,4 @@
-import { Paperclip, Send, Square, X } from "lucide-react";
+import { Paperclip, Send, Square, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,6 +7,7 @@ import { useHiveStore } from "@/lib/hive/store";
 import { cn, formatBytes, nid } from "@/lib/utils";
 import { StatusBar } from "./status-bar";
 import { ResultBlock } from "./result-block";
+import { DeleteProjectDialog } from "./delete-project-dialog";
 
 const STARTERS = [
   "Build me a landing page for a ceramics studio",
@@ -33,6 +34,7 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
 
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -85,6 +87,19 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
             {project?.repoFullName ? ` · ${project.repoFullName}` : ""}
           </p>
         </div>
+        {project && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="sm:hidden text-dim hover:text-danger"
+            onClick={() => setDeleteOpen(true)}
+            aria-label="Delete project"
+            title="Delete project"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        )}
       </header>
 
       <ScrollArea className="flex-1">
@@ -214,6 +229,10 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
           </form>
         </div>
       </div>
+      <DeleteProjectDialog
+        projectId={deleteOpen ? project?.id ?? null : null}
+        onOpenChange={(open) => setDeleteOpen(open)}
+      />
     </div>
   );
 }
