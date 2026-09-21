@@ -233,7 +233,54 @@ async function writePage(data: RunInput, brief: Brief | null): Promise<McTaskRes
   return { ok: true, mcMessage: message, plan, artifact, memory: [] };
 }
 
+function instantClockArtifact(projectName: string): McTaskResult {
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Current Time</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#07111f;color:#f4f7fb;font-family:system-ui,sans-serif}.card{text-align:center;padding:40px 28px;border:1px solid #24344a;border-radius:24px;background:#0d1a2b;box-shadow:0 18px 60px #0006}h1{margin:0 0 18px;font-size:20px;font-weight:600;color:#b9c6d8}.time{font-variant-numeric:tabular-nums;font-size:clamp(48px,12vw,96px);font-weight:700;letter-spacing:-.04em}.date{margin-top:12px;color:#93a4bb;font-size:16px}</style>
+</head>
+<body><main class="card"><h1>Current Time</h1><div id="time" class="time">--:--:--</div><div id="date" class="date"></div></main>
+<script>
+const time=document.getElementById("time"),date=document.getElementById("date");
+function tick(){const now=new Date();time.textContent=now.toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"});date.textContent=now.toLocaleDateString([], {weekday:"long",year:"numeric",month:"long",day:"numeric"});}
+tick();setInterval(tick,1000);
+</script></body></html>`;
+  return {
+    ok: true,
+    mcMessage: "Built the live current-time app instantly without loading the AI model.",
+    plan: {
+      objective: "Show the current local time and date",
+      strategy: "Use a tiny deterministic app so a trivial request does not consume model inference.",
+      researchNeeded: false,
+      researchTopic: "",
+      lieutenants: [{
+        letter: "A",
+        objective: "Build and verify the tiny clock app",
+        agentCount: 1,
+        files: ["index.html"],
+      }],
+    },
+    artifact: {
+      title: projectName && projectName !== "Untitled project" ? projectName : "Current Time",
+      kind: "website",
+      html,
+      files: [{ path: "index.html", content: html }],
+      ready: true,
+    },
+    memory: [],
+  };
+}
+
 export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskResult> {
+  // Tiny deterministic requests should never pay the cost of model startup or decoding.
+  if (/\\b(current\\s+time|time\\s+right\\s+now|digital\\s+clock|show\\s+(me\\s+)?the\\s+time)\\b/i.test(data.prompt)) {
+    return instantClockArtifact(data.projectName);
+  }
+
   if (!localModelSupported()) {
     return { ok: false, error: "This browser cannot run the on-device model." };
   }

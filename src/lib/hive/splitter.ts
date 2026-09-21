@@ -1,8 +1,8 @@
 /**
- * Splitter — one physical ~7B model that role-plays multiple LIs + Agents.
+ * Splitter — a logical execution context that role-plays multiple LIs + Agents.
  *
- * HRC decides how many Splitters to activate (1–5) and how each one splits.
- * A Splitter never loads multiple copies of itself; it maintains separate
+ * HRC decides how many logical Splitter contexts to allocate (1–5).
+ * A Splitter context never claims to be a separate physical model; it maintains separate
  * conversation contexts and switches between them (context switching).
  *
  * Logical hierarchy inside one Splitter remains:
@@ -47,10 +47,10 @@ export type SplitAllocation =
     };
 
 /**
- * HRC's job: turn a list of requested LIs into 1–5 Splitter plans.
+ * HRC's job: turn a list of requested LIs into 1–5 logical Splitter plans.
  *
  * Strategy: pack LIs into Splitters so that each Splitter gets a balanced
- * amount of work. We never create more than MAX_SPLITTERS physical models.
+ * amount of work. We never create more than MAX_SPLITTERS logical Splitter contexts.
  */
 export function allocateSplitters(requested: LieutenantPlan[]): SplitAllocation {
   if (requested.length === 0) {
@@ -106,7 +106,7 @@ export function allocateSplitters(requested: LieutenantPlan[]): SplitAllocation 
     });
   }
 
-  // Decide how many Splitters to use (1–MAX_SPLITTERS).
+  // Decide how many logical Splitter contexts to use (1–MAX_SPLITTERS).
   // Prefer fewer stronger workers when the job is small.
   const splitterCount = Math.min(
     MAX_SPLITTERS,

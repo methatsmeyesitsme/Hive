@@ -167,7 +167,7 @@ export function releaseLock(
  */
 export function estimateSwarm(prompt: string): LieutenantPlan[] {
   const text = prompt.toLowerCase();
-  let liCount = 2;
+  // Default to the smallest useful swarm; HRC scales up only when the request warrants it.\n  let liCount = 1;
   if (
     /landing|website|app|dashboard|shop|store|auth|account|full|rebuild/.test(
       text,
@@ -198,7 +198,7 @@ export function estimateSwarm(prompt: string): LieutenantPlan[] {
     return {
       letter: LI_LETTERS[i],
       objective: t.objective,
-      agentCount: Math.min(MAX_AGENTS_PER_LI, 3 + (i % 3)),
+      agentCount: 1,
       files: t.files,
     };
   });

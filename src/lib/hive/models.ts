@@ -2,8 +2,8 @@
  * Hive model assignment.
  *
  * Architecture:
- *   - MC, HRC, RO  → dedicated ~1.5B models (never split)
- *   - Splitters    → 1–5 × ~7B models managed by HRC
+ *   - MC, HRC, RO  → dedicated logical core roles (not implemented as separate physical model copies)
+ *   - Splitters    → 1–5 logical Splitter contexts managed by HRC
  *                    Each Splitter role-plays multiple LIs + Agents
  *                    via separate conversation contexts (context switching).
  *
@@ -26,13 +26,13 @@ export type ModelSpec = {
   canSplit: boolean;
 };
 
-/** The three dedicated core models. */
+/** The three dedicated core roles. */
 export const CORE_MODELS: Record<"MC" | "HRC" | "RO", ModelSpec> = {
   MC: {
     role: "MC",
     sizeClass: "1.5B",
-    modelId: "Qwen/Qwen2.5-1.5B-Instruct",
-    fallbackId: "Qwen/Qwen3-1.7B",
+    modelId: "onnx-community/Qwen2.5-0.5B-Instruct",
+    fallbackId: "HuggingFaceTB/SmolLM2-360M-Instruct",
     canSplit: false,
   },
   HRC: {
@@ -54,9 +54,9 @@ export const CORE_MODELS: Record<"MC" | "HRC" | "RO", ModelSpec> = {
 /** Template for every Splitter instance. */
 export const SPLITTER_MODEL: ModelSpec = {
   role: "Splitter",
-  sizeClass: "7B",
-  modelId: "Qwen/Qwen2.5-7B-Instruct",
-  fallbackId: "Qwen/Qwen3-8B",
+  sizeClass: "1.5B",
+  modelId: "onnx-community/Qwen2.5-0.5B-Instruct",
+  fallbackId: "HuggingFaceTB/SmolLM2-360M-Instruct",
   canSplit: true,
 };
 

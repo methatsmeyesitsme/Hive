@@ -66,11 +66,11 @@ export type LieutenantState = {
   permissionGranted: boolean;
   agents: AgentState[];
   status: "summoning" | "working" | "reviewing" | "done" | "failed";
-  /** Which physical Splitter is role-playing this Li */
+  /** Which logical Splitter context is role-playing this Li */
   splitterId?: string;
 };
 
-/** One physical ~7B model managed by HRC. */
+/** One logical Splitter context managed by HRC; browser inference currently uses one physical local model session. */
 export type SplitterState = {
   id: string; // S1 … S5
   status: "summoning" | "working" | "reviewing" | "done" | "failed";
