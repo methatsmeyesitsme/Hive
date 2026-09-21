@@ -119,7 +119,7 @@ export function LeftSidebar({
                     "absolute right-1 top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-dim transition-opacity hover:bg-navy-4 hover:text-danger focus-visible:opacity-100",
                     mobile
                       ? "size-9"
-                      : "size-9 opacity-80 group-hover:opacity-100 focus-visible:opacity-100",
+                      : "size-9 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
                   )}
                 >
                   <Trash2 className="size-4" />
