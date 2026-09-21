@@ -12,6 +12,7 @@ import { STORAGE_KEY } from "./constants";
 import { acquireLock, estimateSwarm, hrcAllocate } from "./limits";
 import type { SplitterPlan } from "./splitter";
 import { perf } from "./perf";
+import { releaseModel } from "./local-model";
 import { buildSplitterStates, listSplitterIds, splitterOfLi } from "./splitter-state";
 import type {
   Artifact,
@@ -260,6 +261,8 @@ export const useHiveStore = create<HiveState>()(
           leftOpenMobile: false,
           audits: [audit("MC", `Opened project “${project.name}”`), ...s.audits].slice(0, 80),
         }));
+        // Fresh project → free any previous WebGPU session so OrtRun stays stable.
+        void releaseModel();
       },
 
       selectProject: (id) => {
@@ -279,6 +282,7 @@ export const useHiveStore = create<HiveState>()(
           previewRunning: false,
           leftOpenMobile: false,
         });
+        void releaseModel();
       },
 
       renameProject: (id, name) => {
@@ -302,9 +306,24 @@ export const useHiveStore = create<HiveState>()(
           return {
             projects,
             activeProjectId,
-            ...(wasActive ? { previewOpen: false, previewRunning: false } : {}),
+            ...(wasActive
+              ? {
+                  previewOpen: false,
+                  previewRunning: false,
+                  phase: "idle" as const,
+                  status: idleStatus,
+                  lieutenants: [],
+                  splitters: [],
+                  agentTotal: 0,
+                  fileLocks: [],
+                  pauseReason: null,
+                  frozen: false,
+                }
+              : {}),
           };
         });
+        // Free WebGPU / ONNX session memory so the next project starts clean.
+        void releaseModel();
       },
 
       send: async (text, attachments) => {
@@ -430,10 +449,13 @@ export const useHiveStore = create<HiveState>()(
             modelSettled = true;
           },
         );
+        // Keep the swarm animation snappy: long pauses only while the model is
+        // still thinking; after it answers, collapse to a few frames.
         const pace = async (ms: number) => {
           const afterModel = modelSettled;
           const t = perf.now();
-          await sleep(afterModel ? Math.min(ms, 30) : ms, signal);
+          const capped = afterModel ? Math.min(ms, 12) : Math.min(ms, 180);
+          await sleep(capped, signal);
           perf.pacing(afterModel, perf.now() - t);
         };
 

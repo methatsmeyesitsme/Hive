@@ -146,7 +146,8 @@ function pageBudget(device: "webgpu" | "wasm"): number {
     new URLSearchParams(typeof location === "undefined" ? "" : location.search).get("tokens"),
   );
   if (Number.isFinite(override) && override >= 200 && override <= 4000) return Math.floor(override);
-  return device === "webgpu" ? 2048 : 1000;
+  // Tighter budgets = much faster wall time on-device; early stop on </html> still applies.
+  return device === "webgpu" ? 1400 : 700;
 }
 
 type Brief = ReturnType<typeof parseBrief>;
@@ -217,7 +218,7 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
     const briefMsgs = briefMessages(data);
     perf.prep(perf.now() - tPrep);
     const briefOut = await generateChat(briefMsgs, {
-      maxNewTokens: 120,
+      maxNewTokens: 80,
       temperature: 0.3,
       label: "brief",
       stopWhen: (text) => /BUILD\s*:\s*(yes|no)/i.test(text),
