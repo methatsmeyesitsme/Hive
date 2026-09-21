@@ -85,12 +85,12 @@ export function AppShell() {
       {!narrow && leftCollapsed && (
         <button
           type="button"
-          className="fixed left-3 top-3 z-50 flex size-10 items-center justify-center rounded-md border border-line bg-navy-2 text-mist shadow-panel hover:bg-navy-3 hover:text-fog"
+          className="fixed left-4 top-4 z-50 flex size-12 items-center justify-center rounded-lg border border-line bg-navy-2 text-mist shadow-panel hover:bg-navy-3 hover:text-fog"
           onClick={toggleLeft}
           aria-label="Open menu"
           title="Open menu"
         >
-          <Menu className="size-5" />
+          <Menu className="size-6" />
         </button>
       )}
 

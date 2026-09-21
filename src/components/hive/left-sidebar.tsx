@@ -37,9 +37,9 @@ export function LeftSidebar({
 
   const navBtn = (active: boolean) =>
     cn(
-      "flex w-full items-center gap-3 rounded-md px-2.5 text-sm transition-colors duration-150",
+      "flex w-full items-center gap-3 rounded-lg px-3 text-base transition-colors duration-150",
       collapsed && !mobile ? "justify-center px-0" : "",
-      mobile ? "h-11" : "h-9",
+      mobile ? "h-12" : "h-11",
       active ? "bg-navy-4 text-fog" : "text-mist hover:bg-navy-3 hover:text-fog",
     );
 
@@ -47,7 +47,7 @@ export function LeftSidebar({
     <aside
       className={cn(
         "flex h-full flex-col border-r border-line bg-navy-2",
-        mobile ? "w-full" : collapsed ? "w-14" : "w-[220px]",
+        mobile ? "w-full" : collapsed ? "w-16" : "w-[280px]",
       )}
     >
       <div
@@ -61,10 +61,10 @@ export function LeftSidebar({
           <button
             type="button"
             onClick={onCollapse}
-            className="rounded-md p-1.5 text-dim hover:bg-navy-4 hover:text-fog"
+            className="rounded-lg p-2 text-dim hover:bg-navy-4 hover:text-fog"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <PanelLeft className="size-4" />
+            <PanelLeft className="size-5" />
           </button>
         )}
       </div>
@@ -78,7 +78,7 @@ export function LeftSidebar({
           )}
           onClick={() => setOpenNew(true)}
         >
-          <Plus className="size-4" />
+          <Plus className="size-5" />
           {(!collapsed || mobile) && "New Project"}
         </Button>
       </div>
@@ -101,7 +101,7 @@ export function LeftSidebar({
                 onClick={() => selectProject(p.id)}
                 title={p.name}
               >
-                <Folder className="size-4 shrink-0" />
+                <Folder className="size-5 shrink-0" />
                 {(!collapsed || mobile) && (
                   <span className="truncate">{p.name}</span>
                 )}
@@ -119,10 +119,10 @@ export function LeftSidebar({
                     "absolute right-1 top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-dim transition-opacity hover:bg-navy-4 hover:text-danger focus-visible:opacity-100",
                     mobile
                       ? "size-9"
-                      : "size-7 opacity-60 group-hover:opacity-100 focus-visible:opacity-100",
+                      : "size-9 opacity-80 group-hover:opacity-100 focus-visible:opacity-100",
                   )}
                 >
-                  <Trash2 className="size-3.5" />
+                  <Trash2 className="size-4" />
                 </button>
               )}
             </li>
@@ -136,7 +136,7 @@ export function LeftSidebar({
           className={navBtn(view === "memory")}
           onClick={() => setView("memory")}
         >
-          <BookOpen className="size-4 shrink-0" />
+          <BookOpen className="size-5 shrink-0" />
           {(!collapsed || mobile) && "Memory"}
         </button>
         <button
@@ -144,11 +144,11 @@ export function LeftSidebar({
           className={navBtn(view === "settings")}
           onClick={() => setView("settings")}
         >
-          <Settings className="size-4 shrink-0" />
+          <Settings className="size-5 shrink-0" />
           {(!collapsed || mobile) && "Settings"}
         </button>
         <button type="button" className={navBtn(false)} onClick={logout}>
-          <LogOut className="size-4 shrink-0" />
+          <LogOut className="size-5 shrink-0" />
           {(!collapsed || mobile) && (sessionName ? `Log out` : "Log out")}
         </button>
       </div>
