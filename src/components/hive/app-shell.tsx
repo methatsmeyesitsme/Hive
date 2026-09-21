@@ -94,6 +94,18 @@ export function AppShell() {
         </button>
       )}
 
+      {!narrow && rightCollapsed && (
+        <button
+          type="button"
+          className="fixed left-20 top-4 z-50 flex size-12 items-center justify-center rounded-lg border border-line bg-navy-2 text-mist shadow-panel hover:bg-navy-3 hover:text-fog"
+          onClick={toggleRight}
+          aria-label="Open Hive status"
+          title="Open Hive status"
+        >
+          <Radio className="size-6" />
+        </button>
+      )}
+
       {narrow && leftOpenMobile && (
         <div className="fixed inset-0 z-40 flex">
           <div className="w-[min(100%,280px)] bg-navy-2 shadow-panel">
