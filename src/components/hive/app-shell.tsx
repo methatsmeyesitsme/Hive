@@ -82,6 +82,18 @@ export function AppShell() {
         <LeftSidebar collapsed={leftCollapsed} onCollapse={toggleLeft} />
       )}
 
+      {!narrow && leftCollapsed && (
+        <button
+          type="button"
+          className="fixed left-3 top-3 z-50 flex size-10 items-center justify-center rounded-md border border-line bg-navy-2 text-mist shadow-panel hover:bg-navy-3 hover:text-fog"
+          onClick={toggleLeft}
+          aria-label="Open menu"
+          title="Open menu"
+        >
+          <Menu className="size-5" />
+        </button>
+      )}
+
       {narrow && leftOpenMobile && (
         <div className="fixed inset-0 z-40 flex">
           <div className="w-[min(100%,280px)] bg-navy-2 shadow-panel">
