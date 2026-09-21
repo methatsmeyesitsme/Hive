@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { APP_VERSION } from "@/lib/hive/version";
 
 export function HiveMark({ className }: { className?: string }) {
   return (
@@ -20,7 +21,7 @@ export function HiveWordmark({ collapsed = false }: { collapsed?: boolean }) {
       {!collapsed && (
         <div className="flex flex-col leading-none">
           <span className="font-display text-lg font-semibold tracking-[0.18em] text-fog">HIVE</span>
-          <span className="mt-1 text-[9px] font-medium tracking-[0.12em] text-dim">v2.0</span>
+          <span className="mt-1 text-[9px] font-medium tracking-[0.12em] text-dim">v{APP_VERSION}</span>
         </div>
       )}
     </div>
