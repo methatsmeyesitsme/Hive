@@ -44,6 +44,8 @@ export type RunPerf = {
   waitModelMs: number;
   /** From the model's answer to "complete". */
   integrateMs: number;
+  /** Times the model session was restarted after a runtime failure. */
+  recoveries: number;
   load: LoadPerf | null;
 };
 
@@ -75,6 +77,7 @@ export const perf = {
       pacingAfterMs: 0,
       waitModelMs: 0,
       integrateMs: 0,
+      recoveries: 0,
       load: null,
     };
   },
@@ -94,6 +97,9 @@ export const perf = {
   },
   integrate(ms: number) {
     if (current) current.integrateMs += ms;
+  },
+  recovery() {
+    if (current) current.recoveries += 1;
   },
 
   finishRun(): RunPerf | null {
@@ -142,6 +148,7 @@ export function perfRows(run: RunPerf): [string, string, boolean][] {
   rows.push(["Waiting on model", sec(run.waitModelMs), false]);
   rows.push(["Swarm pauses after model", sec(run.pacingAfterMs), false]);
   rows.push(["Integration", sec(run.integrateMs), false]);
+  if (run.recoveries > 0) rows.push(["Model restarts", String(run.recoveries), false]);
   if (run.wallMs !== null) rows.push(["Not inference", sec(Math.max(0, run.wallMs - inference)), false]);
   if (run.load) {
     const l = run.load;

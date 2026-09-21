@@ -5,6 +5,7 @@ import {
   Plus,
   Settings,
   BookOpen,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +13,7 @@ import { HiveWordmark } from "./logo";
 import { useHiveStore } from "@/lib/hive/store";
 import { cn } from "@/lib/utils";
 import { NewProjectDialog } from "./new-project-dialog";
+import { DeleteProjectDialog } from "./delete-project-dialog";
 import { useState } from "react";
 
 export function LeftSidebar({
@@ -31,6 +33,7 @@ export function LeftSidebar({
   const logout = useHiveStore((s) => s.logout);
   const sessionName = useHiveStore((s) => s.sessionName);
   const [openNew, setOpenNew] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const navBtn = (active: boolean) =>
     cn(
@@ -88,10 +91,13 @@ export function LeftSidebar({
         )}
         <ul className="space-y-0.5 pb-3">
           {projects.map((p) => (
-            <li key={p.id}>
+            <li key={p.id} className="group relative">
               <button
                 type="button"
-                className={navBtn(view === "workspace" && p.id === activeId)}
+                className={cn(
+                  navBtn(view === "workspace" && p.id === activeId),
+                  (!collapsed || mobile) && "pr-10",
+                )}
                 onClick={() => selectProject(p.id)}
                 title={p.name}
               >
@@ -100,6 +106,22 @@ export function LeftSidebar({
                   <span className="truncate">{p.name}</span>
                 )}
               </button>
+              {(!collapsed || mobile) && (
+                <button
+                  type="button"
+                  aria-label={`Delete ${p.name}`}
+                  title="Delete project"
+                  onClick={() => setDeleteId(p.id)}
+                  className={cn(
+                    "absolute right-1 top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-dim transition-opacity hover:bg-navy-4 hover:text-danger focus-visible:opacity-100",
+                    mobile
+                      ? "size-9"
+                      : "size-7 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100",
+                  )}
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -129,6 +151,12 @@ export function LeftSidebar({
       </div>
 
       <NewProjectDialog open={openNew} onOpenChange={setOpenNew} />
+      <DeleteProjectDialog
+        projectId={deleteId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteId(null);
+        }}
+      />
     </aside>
   );
 }

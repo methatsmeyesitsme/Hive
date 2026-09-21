@@ -29,6 +29,18 @@ function field(text: string, name: string): string {
   return m ? clean(m[1]) : "";
 }
 
+/** Does the request look like a page/app to build or change (rather than a question)? */
+export function looksLikeBuild(prompt: string): boolean {
+  return BUILD_WORDS.test(prompt);
+}
+
+/** The REPLY line of a model answer, if it wrote one. */
+export function replyLine(text: string): string | null {
+  const m = text.match(/^[\s*#>_-]*REPLY\s*:\s*(.+)$/im);
+  const v = m ? clean(m[1]) : "";
+  return v && !/^<.*>$/.test(v) ? v.slice(0, 300) : null;
+}
+
 export function parseBrief(text: string, prompt: string): Brief {
   const reply = field(text, "REPLY");
   const objective = field(text, "OBJECTIVE");

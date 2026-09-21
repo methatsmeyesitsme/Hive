@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { getFastMode, setFastMode, subscribeSettings } from "@/lib/hive/settings";
 import { useHiveStore } from "@/lib/hive/store";
 import { APP_VERSION } from "@/lib/hive/version";
 import { toast } from "sonner";
@@ -10,6 +11,7 @@ import { toast } from "sonner";
 export function SettingsView() {
   const sessionName = useHiveStore((s) => s.sessionName);
   const logout = useHiveStore((s) => s.logout);
+  const fastMode = useSyncExternalStore(subscribeSettings, getFastMode, getFastMode);
   const githubConnected = useHiveStore((s) => s.githubConnected);
   const githubUsername = useHiveStore((s) => s.githubUsername);
   const githubRepo = useHiveStore((s) => s.githubRepo);
@@ -49,6 +51,37 @@ export function SettingsView() {
             <p className="mt-1 text-sm text-fog">{sessionName}</p>
             <Button variant="secondary" className="mt-4" onClick={logout}>
               Log out
+            </Button>
+          </div>
+        </section>
+
+        <Separator />
+
+        <section>
+          <h2 className="font-display text-base font-semibold">Speed</h2>
+          <p className="mt-1 text-sm text-mist">
+            Fast mode: MC writes the site text in one step and Hive builds the page from a
+            template. Full page: the model writes the whole page itself, in two steps. It is much
+            slower and usually lower quality on a small model.
+          </p>
+          <div className="mt-4 flex gap-2" role="radiogroup" aria-label="Speed">
+            <Button
+              type="button"
+              role="radio"
+              aria-checked={fastMode}
+              variant={fastMode ? "default" : "secondary"}
+              onClick={() => setFastMode(true)}
+            >
+              Fast
+            </Button>
+            <Button
+              type="button"
+              role="radio"
+              aria-checked={!fastMode}
+              variant={fastMode ? "secondary" : "default"}
+              onClick={() => setFastMode(false)}
+            >
+              Full page
             </Button>
           </div>
         </section>

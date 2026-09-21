@@ -35,7 +35,7 @@ export type LocalBackend = { device: LocalDevice; dtype: LocalDtype; model: Mode
 type Generator = ((
   messages: LocalChatMessage[],
   options: Record<string, unknown>,
-) => Promise<Array<{ generated_text: LocalChatMessage[] }>>) & { tokenizer?: unknown };
+) => Promise<Array<{ generated_text: LocalChatMessage[] }>>) & { tokenizer?: unknown; dispose?: () => Promise<void> | void };
 
 type ProgressEvent = {
   status: string;
@@ -146,9 +146,24 @@ function detectIOS(): boolean {
   return isIOS(navigator.userAgent, navigator.platform, navigator.maxTouchPoints ?? 0);
 }
 
+/**
+ * The memory-saving load settings (no graph optimisation, no memory arena) make each
+ * token slower, so they are only on for iPhone/iPad, where the tab otherwise crashes.
+ * `?lowmem=on` / `?lowmem=off` override.
+ */
+export function useLowMemory(search: string, ios: boolean): boolean {
+  const forced = new URLSearchParams(search).get("lowmem");
+  if (forced === "on") return true;
+  if (forced === "off") return false;
+  return ios;
+}
+
 export function isIOS(ua: string, platform: string, touchPoints: number): boolean {
   return /iPad|iPhone|iPod/.test(ua) || (platform === "MacIntel" && touchPoints > 1);
 }
+
+/** Set once WebGPU has failed twice in a row on this page; the CPU backend is used from then on. */
+let avoidWebGpu = false;
 
 async function candidateBackends(): Promise<LocalBackend[]> {
   let hasWebGpu = false;
@@ -164,7 +179,7 @@ async function candidateBackends(): Promise<LocalBackend[]> {
   }
   return pickBackends(
     typeof location === "undefined" ? "" : location.search,
-    hasWebGpu,
+    hasWebGpu && !avoidWebGpu,
     detectIOS(),
   );
 }
@@ -263,19 +278,19 @@ function loadModel(): Promise<Loaded> {
 
     const tLibrary = perf.now();
 
-    // Memory-saving defaults for phones. Escape hatches on the page address:
+    // Page-address switches:
     //   ?cache=off   skip the browser cache copy of the model files
-    //   ?lowmem=off  use the runtime's normal (faster, hungrier) load settings
+    //   ?lowmem=on|off  force the memory-saving load settings on or off (default: on for
+    //                   iPhone/iPad only, because they trade speed for memory)
     const flags = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
     if (mod.env) {
       if (flags.get("cache") === "off") mod.env.useBrowserCache = false;
       const wasm = mod.env.backends?.onnx?.wasm;
       if (wasm) wasm.numThreads = 1;
     }
-    const sessionOptions =
-      flags.get("lowmem") === "off"
-        ? undefined
-        : { graphOptimizationLevel: "disabled", enableCpuMemArena: false, enableMemPattern: false };
+    const sessionOptions = useLowMemory(flags.toString(), detectIOS())
+      ? { graphOptimizationLevel: "disabled", enableCpuMemArena: false, enableMemPattern: false }
+      : undefined;
 
     let lastError: unknown = null;
     for (const backend of await candidateBackends()) {
@@ -340,13 +355,33 @@ export type GenerateOptions = {
   stopWhen?: (textSoFar: string) => boolean;
 };
 
+/** Errors from the runtime itself (a lost GPU device, a failed buffer download), not from the request. */
+export function isRuntimeFailure(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /OrtRun|onnxruntime|buffer_manager|webgpu|GPUDevice|device (was )?lost|out of memory/i.test(message);
+}
+
+/** Throw away the current session so the next call loads a fresh one. */
+async function resetModel(): Promise<void> {
+  const old = loading;
+  loading = null;
+  setStatus({ stage: "idle", progress: 0, error: null });
+  try {
+    const loaded = await old;
+    await Promise.race([
+      Promise.resolve(loaded?.generator.dispose?.()),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  } catch {
+    // the old session may already be unusable
+  }
+}
+
 export function generateChat(
   messages: LocalChatMessage[],
   options: GenerateOptions,
 ): Promise<{ text: string; device: LocalDevice }> {
-  const run = async () => {
-    // The model is loaded once per page load and reused by every call.
-    const { generator, device, label, mod } = await loadModel();
+  const generateOnce = async ({ generator, device, label, mod }: Loaded) => {
     setBreadcrumb(`writing ${options.label ?? "a reply"}`, label);
 
     const callOptions: Record<string, unknown> = {
@@ -400,6 +435,25 @@ export function generateChat(
       stoppedEarly,
     });
     return { text, device };
+  };
+
+  const run = async () => {
+    // The model is loaded once per page load and reused by every call. If the runtime
+    // itself fails (e.g. the GPU device is lost after several runs), restart the session
+    // and retry; after two WebGPU failures fall back to the CPU backend.
+    let failures = 0;
+    for (;;) {
+      const loaded = await loadModel();
+      try {
+        return await generateOnce(loaded);
+      } catch (err) {
+        if (failures >= 2 || !isRuntimeFailure(err)) throw err;
+        failures += 1;
+        perf.recovery();
+        if (loaded.device === "webgpu" && failures >= 2) avoidWebGpu = true;
+        await resetModel();
+      }
+    }
   };
   // One generation at a time: a single ONNX session cannot run concurrently.
   const next = queue.then(run, run);

@@ -292,11 +292,18 @@ export const useHiveStore = create<HiveState>()(
       },
 
       deleteProject: (id) => {
+        const wasActive = get().activeProjectId === id;
+        // Deleting the project a run is working on stops that run first.
+        const idle = ["idle", "complete", "error", "cancelled"].includes(get().phase);
+        if (wasActive && !idle) get().cancel();
         set((s) => {
           const projects = s.projects.filter((p) => p.id !== id);
-          const activeProjectId =
-            s.activeProjectId === id ? (projects[0]?.id ?? null) : s.activeProjectId;
-          return { projects, activeProjectId };
+          const activeProjectId = wasActive ? (projects[0]?.id ?? null) : s.activeProjectId;
+          return {
+            projects,
+            activeProjectId,
+            ...(wasActive ? { previewOpen: false, previewRunning: false } : {}),
+          };
         });
       },
 

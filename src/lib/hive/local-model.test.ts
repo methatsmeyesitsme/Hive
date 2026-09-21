@@ -6,6 +6,7 @@ import {
   MODEL_LADDER,
   pickBackends,
   progressLabel,
+  useLowMemory,
 } from "./local-model.ts";
 
 const [QWEN, SMOL360, SMOL135] = MODEL_LADDER;
@@ -73,5 +74,16 @@ describe("progressLabel", () => {
   });
   it("switches to the init stage once the download is done", () => {
     assert.equal(progressLabel(1), "starting the model (download finished)");
+  });
+});
+
+describe("useLowMemory", () => {
+  it("is on for iPhone/iPad only by default", () => {
+    assert.equal(useLowMemory("", true), true);
+    assert.equal(useLowMemory("", false), false);
+  });
+  it("?lowmem=on / off override", () => {
+    assert.equal(useLowMemory("?lowmem=on", false), true);
+    assert.equal(useLowMemory("?lowmem=off", true), false);
   });
 });
