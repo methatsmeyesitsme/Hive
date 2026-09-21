@@ -397,6 +397,16 @@ export const useHiveStore = create<HiveState>()(
             })),
             currentHtml: project.artifact?.html ?? null,
             projectName: project.name,
+            // Show the model's real progress in MC's status line (a few updates a second).
+            onProgress: (() => {
+              let last = 0;
+              return ({ label, tokens }: { label: string; tokens: number }) => {
+                const now = perf.now();
+                if (now - last < 250 || get().runId !== runId) return;
+                last = now;
+                set({ status: { ...get().status, mc: `Writing the ${label}… ${tokens} tokens` } });
+              };
+            })(),
           },
         });
 

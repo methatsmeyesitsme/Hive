@@ -347,7 +347,10 @@ export function preloadLocalModel(): Promise<unknown> {
 let queue: Promise<unknown> = Promise.resolve();
 
 export type GenerateOptions = {
-  maxNewTokens: number;
+  /** A fixed limit, or one chosen once the backend (webgpu / wasm) is known. */
+  maxNewTokens: number | ((device: LocalDevice) => number);
+  /** Called for every generated token with the running count. */
+  onToken?: (tokens: number) => void;
   temperature?: number;
   /** Shown in the breadcrumb and timing report, e.g. "the brief" or "the page". */
   label?: string;
@@ -384,8 +387,10 @@ export function generateChat(
   const generateOnce = async ({ generator, device, label, mod }: Loaded) => {
     setBreadcrumb(`writing ${options.label ?? "a reply"}`, label);
 
+    const maxNew =
+      typeof options.maxNewTokens === "function" ? options.maxNewTokens(device) : options.maxNewTokens;
     const callOptions: Record<string, unknown> = {
-      max_new_tokens: options.maxNewTokens,
+      max_new_tokens: maxNew,
       do_sample: true,
       temperature: options.temperature ?? 0.5,
       top_p: 0.9,
@@ -413,6 +418,7 @@ export function generateChat(
         token_callback_function: () => {
           tokens += 1;
           if (tFirst === null) tFirst = perf.now();
+          options.onToken?.(tokens);
         },
       });
     }
@@ -430,7 +436,7 @@ export function generateChat(
       decodeMs,
       tokens,
       tokPerSec: decodeMs !== null && decodeMs > 0 && tokens > 1 ? (tokens - 1) / (decodeMs / 1000) : null,
-      maxNew: options.maxNewTokens,
+      maxNew,
       promptChars: messages.reduce((n, m) => n + m.content.length, 0),
       stoppedEarly,
     });

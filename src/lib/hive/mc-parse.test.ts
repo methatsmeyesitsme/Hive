@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import {
   buildPlan,
   extractHtml,
-  fallbackPage,
-  guessSubject,
   isUsablePage,
   pageTitle,
   parseBrief,
@@ -93,23 +91,16 @@ describe("extractHtml / repairHtml", () => {
 describe("isUsablePage / pageTitle", () => {
   it("rejects near-empty pages and accepts real ones", () => {
     assert.equal(isUsablePage("<!doctype html><html><body></body></html>"), false);
-    assert.equal(isUsablePage(fallbackPage("landing page for a ceramics studio")), true);
+    assert.equal(
+      isUsablePage(
+        "<!doctype html><html><body><h1>Clay & Fire</h1><p>Hand-thrown pottery for everyday life, made in small batches in our studio.</p></body></html>",
+      ),
+      true,
+    );
   });
 
   it("reads the title", () => {
     assert.equal(pageTitle("<title> Clay Studio </title>", "x"), "Clay Studio");
     assert.equal(pageTitle("<p>no title</p>", "x"), "x");
-  });
-});
-
-describe("guessSubject / fallbackPage", () => {
-  it("finds the subject of the request", () => {
-    assert.equal(guessSubject("Build me a landing page for a ceramics studio"), "Ceramics Studio");
-    assert.equal(guessSubject("Add a waitlist form"), "Your Project");
-  });
-
-  it("escapes the subject", () => {
-    const html = fallbackPage("page for <script>alert(1)</script>");
-    assert.ok(!html.includes("<script>alert"));
   });
 });
