@@ -167,7 +167,8 @@ export function releaseLock(
  */
 export function estimateSwarm(prompt: string): LieutenantPlan[] {
   const text = prompt.toLowerCase();
-  // Default to the smallest useful swarm; HRC scales up only when the request warrants it.\n  let liCount = 1;
+  // Default to the smallest useful swarm; HRC scales up only when the request warrants it.
+  let liCount = 1;
   if (
     /landing|website|app|dashboard|shop|store|auth|account|full|rebuild/.test(
       text,

@@ -277,7 +277,7 @@ tick();setInterval(tick,1000);
 
 export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskResult> {
   // Tiny deterministic requests should never pay the cost of model startup or decoding.
-  if (/\\b(current\\s+time|time\\s+right\\s+now|digital\\s+clock|show\\s+(me\\s+)?the\\s+time)\\b/i.test(data.prompt)) {
+  if (/\b(current\s+time|time\s+right\s+now|digital\s+clock|show\s+(me\s+)?the\s+time)\b/i.test(data.prompt)) {
     return instantClockArtifact(data.projectName);
   }
 

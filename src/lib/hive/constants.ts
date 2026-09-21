@@ -19,6 +19,6 @@ export const STORAGE_KEY = "hive-workspace-v1";
 
 /** Model size classes used by Hive. */
 export const MODEL_CLASS = {
-  core: "1.5B",
+  core: "0.5B",
   splitter: "0.5B",
 } as const;
