@@ -34,6 +34,20 @@ export function looksLikeBuild(prompt: string): boolean {
   return BUILD_WORDS.test(prompt);
 }
 
+const APP_WORDS =
+  /\b(app|apps|tool|calculator|clock|timer|stopwatch|countdown|counter|game|tracker|converter|to-?do|checklist|quiz|generator|planner|dashboard|widget|notepad|player|simulator|randomi[sz]er)\b/i;
+const SITE_WORDS =
+  /\b(landing|website|web ?site|homepage|home page|portfolio|blog|store|shop|restaurant|agency|studio|company|business|newsletter)\b/i;
+
+/**
+ * Is the request for a small working app (a clock, a calculator, a game) rather than a
+ * page to read? Apps need a different prompt: the page has to have working JavaScript,
+ * not a hero and four marketing sections.
+ */
+export function looksLikeApp(prompt: string): boolean {
+  return APP_WORDS.test(prompt) && !SITE_WORDS.test(prompt);
+}
+
 /** The REPLY line of a model answer, if it wrote one. */
 export function replyLine(text: string): string | null {
   const m = text.match(/^[\s*#>_-]*REPLY\s*:\s*(.+)$/im);
@@ -131,7 +145,36 @@ export function visibleText(html: string): string {
 }
 
 export function isUsablePage(html: string): boolean {
-  return /<body[\s>]/i.test(html) && visibleText(html.split(/<body[\s>]/i)[1] ?? "").length >= 80;
+  if (!/<body[\s>]/i.test(html)) return false;
+  const body = html.split(/<body[\s>]/i)[1] ?? "";
+  if (visibleText(body).length >= 80) return true;
+  // A small app (a clock, a counter) has little text of its own: the script fills it in.
+  // Accept it when it carries a finished script and some real markup to put things in.
+  const hasScript = /<script[\s>][\s\S]{30,}?<\/script\s*>/i.test(body);
+  const markup = body.replace(/<script[\s\S]*?<\/script\s*>/gi, "").trim();
+  return hasScript && markup.length >= 20;
+}
+
+const BASE_CSS =
+  "*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;line-height:1.5}img,svg,video,canvas{max-width:100%}button,input,select,textarea{font:inherit}";
+
+/**
+ * Give a model-written page the basics a 0.5B model often forgets, so it shows up right
+ * on a phone: charset, a viewport tag, and a tiny reset. The reset goes first in the
+ * head, so every rule the model wrote still wins. Nothing else is added or changed.
+ */
+export function polishHtml(html: string): string {
+  const extras: string[] = [];
+  if (!/<meta[^>]+charset/i.test(html)) extras.push('<meta charset="utf-8">');
+  if (!/<meta[^>]+name=["']?viewport/i.test(html)) {
+    extras.push('<meta name="viewport" content="width=device-width, initial-scale=1">');
+  }
+  extras.push(`<style id="hive-base">${BASE_CSS}</style>`);
+  const inject = extras.join("");
+
+  if (/<head[\s>]/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => `${m}${inject}`);
+  if (/<html[\s>]/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => `${m}<head>${inject}</head>`);
+  return html.replace(/^(<!doctype[^>]*>)?/i, (m) => `${m}<head>${inject}</head>`);
 }
 
 export function pageTitle(html: string, fallback: string): string {

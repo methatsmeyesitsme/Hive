@@ -7,6 +7,7 @@ import { SettingsView } from "./settings";
 import { MemoryView } from "./memory";
 import { PreviewDialog } from "./preview";
 import { Welcome } from "./welcome";
+import { startModelPreload } from "@/lib/hive/local-model";
 import { useHiveStore } from "@/lib/hive/store";
 import { HiveMark } from "./logo";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,12 @@ export function AppShell() {
   useEffect(() => {
     void checkAi();
   }, [checkAi]);
+
+  // Open the on-device model in the background as soon as there is a workspace, so the
+  // download and start-up overlap with the person typing instead of following their request.
+  useEffect(() => {
+    if (hydrated && sessionName) startModelPreload();
+  }, [hydrated, sessionName]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 900px)");

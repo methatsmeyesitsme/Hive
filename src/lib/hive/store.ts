@@ -12,7 +12,14 @@ import { STORAGE_KEY } from "./constants";
 import { acquireLock, estimateSwarm, hrcAllocate } from "./limits";
 import type { SplitterPlan } from "./splitter";
 import { perf } from "./perf";
-import { releaseModel } from "./local-model";
+import {
+  describeModelStatus,
+  getModelStatus,
+  releaseModelIfWorn,
+  subscribeModelStatus,
+  type ModelStatus,
+} from "./local-model";
+import { closeOpenAudits, logAudits } from "./audit-log";
 import { buildSplitterStates, listSplitterIds, splitterOfLi } from "./splitter-state";
 import type {
   Artifact,
@@ -220,6 +227,7 @@ export const useHiveStore = create<HiveState>()(
         abortRun?.abort();
         abortRun = null;
         set({
+          audits: closeOpenAudits(get().audits),
           sessionName: null,
           view: "workspace",
           phase: "idle",
@@ -259,16 +267,17 @@ export const useHiveStore = create<HiveState>()(
           previewOpen: false,
           previewRunning: false,
           leftOpenMobile: false,
-          audits: [audit("MC", `Opened project “${project.name}”`), ...s.audits].slice(0, 80),
+          audits: logAudits(s.audits, [audit("MC", `Opened project “${project.name}”`)], "final"),
         }));
         // Fresh project → free any previous WebGPU session so OrtRun stays stable.
-        void releaseModel();
+        void releaseModelIfWorn();
       },
 
       selectProject: (id) => {
         abortRun?.abort();
         abortRun = null;
         set({
+          audits: closeOpenAudits(get().audits),
           activeProjectId: id,
           view: "workspace",
           phase: "idle",
@@ -282,7 +291,7 @@ export const useHiveStore = create<HiveState>()(
           previewRunning: false,
           leftOpenMobile: false,
         });
-        void releaseModel();
+        void releaseModelIfWorn();
       },
 
       renameProject: (id, name) => {
@@ -323,7 +332,7 @@ export const useHiveStore = create<HiveState>()(
           };
         });
         // Free WebGPU / ONNX session memory so the next project starts clean.
-        void releaseModel();
+        void releaseModelIfWorn();
       },
 
       send: async (text, attachments) => {
@@ -386,10 +395,9 @@ export const useHiveStore = create<HiveState>()(
           splitters: [],
           agentTotal: 0,
           fileLocks: [],
-          audits: [
+          audits: logAudits(get().audits, [
             audit("MC", "Received the human’s original request"),
-            ...get().audits,
-          ].slice(0, 80),
+          ]),
         });
 
         const history = project.messages
@@ -416,6 +424,7 @@ export const useHiveStore = create<HiveState>()(
             })),
             currentHtml: project.artifact?.html ?? null,
             projectName: project.name,
+            signal,
             // Show the model's real progress in MC's status line (a few updates a second).
             onProgress: (() => {
               let last = 0;
@@ -428,6 +437,18 @@ export const useHiveStore = create<HiveState>()(
             })(),
           },
         });
+
+        // While the model downloads or starts, say so in MC's line instead of a silent wait.
+        let lastModelLine = "";
+        const showModelLine = (m: ModelStatus) => {
+          const line = m.stage === "loading" ? describeModelStatus(m) : null;
+          if (!line || line === lastModelLine || signal.aborted || get().runId !== runId) return;
+          lastModelLine = line;
+          set({ status: { ...get().status, mc: line } });
+        };
+        showModelLine(getModelStatus());
+        const unsubModel = subscribeModelStatus(showModelLine);
+        void apiPromise.then(unsubModel, unsubModel);
 
         // Splitter bookkeeping for this run (filled in once HRC allocates).
         let splitPlans: SplitterPlan[] = [];
@@ -476,7 +497,7 @@ export const useHiveStore = create<HiveState>()(
           set({
             phase: "error",
             status: { mc: "Could not complete the run", hrc: "Standing by", ro: "Standing by" },
-            audits: [audit("MC", "Run failed"), ...get().audits].slice(0, 80),
+            audits: logAudits(get().audits, [audit("MC", "Run failed")], "final"),
             agentTotal: 0,
             fileLocks: [],
             lieutenants: get().lieutenants.map((li) => ({
@@ -500,11 +521,10 @@ export const useHiveStore = create<HiveState>()(
               hrc: "Receiving objective",
               ro: "Receiving objective",
             },
-            audits: [
+            audits: logAudits(get().audits, [
               audit("MC", "Sent overall objective to HRC"),
               audit("MC", "Sent overall objective to RO"),
-              ...get().audits,
-            ].slice(0, 80),
+            ]),
           });
 
           await pace(650);
@@ -534,13 +554,12 @@ export const useHiveStore = create<HiveState>()(
               hrc: `Allocating ${pre.totalAgents} agents across ${pre.lieutenants.length} Li on ${plural(splitPlans.length, "Splitter")}`,
               ro: pre.lieutenants.length > 2 ? "Preparing research channels" : "Standing by",
             },
-            audits: [
+            audits: logAudits(get().audits, [
               audit(
                 "HRC",
                 `Planned ${plural(splitPlans.length, "Splitter")} for ${plural(pre.lieutenants.length, "Li")}`,
               ),
-              ...get().audits,
-            ].slice(0, 80),
+            ]),
           });
 
           await pace(700);
@@ -553,10 +572,9 @@ export const useHiveStore = create<HiveState>()(
               activity: "Loading 7B model",
               lieutenants: [],
             })),
-            audits: [
+            audits: logAudits(get().audits, [
               audit("HRC", `Activated ${listSplitterIds(splitPlans)}`),
-              ...get().audits,
-            ].slice(0, 80),
+            ]),
           });
           await pace(450);
           set({ status: { ...get().status, hrc: "Summoning Li" } });
@@ -580,13 +598,12 @@ export const useHiveStore = create<HiveState>()(
                 ...get().status,
                 hrc: `Summoned Li ${li.letter} on ${splitOf.get(li.letter) ?? "a Splitter"} · allowance ${li.agentCount}`,
               },
-              audits: [
+              audits: logAudits(get().audits, [
                 audit(
                   "HRC",
                   `Summoned Li ${li.letter} on ${splitOf.get(li.letter) ?? "a Splitter"} with allowance ${li.agentCount}`,
                 ),
-                ...get().audits,
-              ].slice(0, 80),
+              ]),
             });
             syncSplitters();
             await pace(220);
@@ -643,11 +660,10 @@ export const useHiveStore = create<HiveState>()(
               hrc: "All required Li and agents created",
               ro: "Memory standing by",
             },
-            audits: [
+            audits: logAudits(get().audits, [
               audit("HRC", "Notified MC that the swarm is ready"),
               audit("MC", "Distributed designated objectives to Li"),
-              ...get().audits,
-            ].slice(0, 80),
+            ]),
           });
           await pace(500);
 
@@ -695,13 +711,12 @@ export const useHiveStore = create<HiveState>()(
           splitOf = splitterOfLi(splitPlans);
           if (splitPlans.length !== previousSplitters) {
             set({
-              audits: [
+              audits: logAudits(get().audits, [
                 audit(
                   "HRC",
                   `Re-split ${plural(allocated.lieutenants.length, "Li")} across ${plural(splitPlans.length, "Splitter")}`,
                 ),
-                ...get().audits,
-              ].slice(0, 80),
+              ]),
             });
           }
 
@@ -757,12 +772,11 @@ export const useHiveStore = create<HiveState>()(
                 hrc: `Managing ${liveTotal} active agents`,
                 ro: `Researching ${result.plan.researchTopic || "the open web"}`,
               },
-              audits: [
+              audits: logAudits(get().audits, [
                 audit("RO", `Web research: ${result.plan.researchTopic || "context"}`),
                 audit("RO", "Returned findings directly to requesting agents"),
                 audit("MC", "Distributed relevant new information to Li"),
-                ...get().audits,
-              ].slice(0, 80),
+              ]),
             });
             await pace(900);
           }
@@ -836,11 +850,10 @@ export const useHiveStore = create<HiveState>()(
               status: "done",
               activity: "Compiled result sent to MC",
             })),
-            audits: [
+            audits: logAudits(get().audits, [
               audit("Li", "Sent compiled mini-swarm results to MC"),
               audit("MC", "Performing final integration"),
-              ...get().audits,
-            ].slice(0, 80),
+            ]),
           });
           syncSplitters();
           await pace(750);
@@ -904,7 +917,7 @@ export const useHiveStore = create<HiveState>()(
               hrc: "Standing by",
               ro: "Standing by",
             },
-            audits: [audit("MC", "Presented completed work"), ...get().audits].slice(0, 80),
+            audits: logAudits(get().audits, [audit("MC", "Presented completed work")], "final"),
           });
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") return;
@@ -941,7 +954,7 @@ export const useHiveStore = create<HiveState>()(
           agentTotal: 0,
           fileLocks: [],
           previewRunning: false,
-          audits: [audit("MC", "Run cancelled by human"), ...get().audits].slice(0, 80),
+          audits: logAudits(get().audits, [audit("MC", "Run cancelled by human")], "final"),
         });
       },
 
@@ -959,7 +972,7 @@ export const useHiveStore = create<HiveState>()(
           },
           agentTotal: 0,
           fileLocks: [],
-          audits: [audit("HRC", "Emergency freeze engaged"), ...get().audits].slice(0, 80),
+          audits: logAudits(get().audits, [audit("HRC", "Emergency freeze engaged")], "final"),
         });
       },
 
@@ -972,7 +985,7 @@ export const useHiveStore = create<HiveState>()(
         };
         set((s) => ({
           memories: [item, ...s.memories].slice(0, 80),
-          audits: [audit("RO", `Memory: ${item.title}`), ...s.audits].slice(0, 80),
+          audits: logAudits(s.audits, [audit("RO", `Memory: ${item.title}`)], "instant"),
         }));
       },
 
@@ -1010,7 +1023,7 @@ export const useHiveStore = create<HiveState>()(
             githubConnected: true,
             githubUsername: res.username,
             githubError: null,
-            audits: [audit("RO", `GitHub connected as ${res.username}`), ...get().audits].slice(0, 80),
+            audits: logAudits(get().audits, [audit("RO", `GitHub connected as ${res.username}`)], "instant"),
           });
           await get().refreshRepos();
           return true;
@@ -1093,7 +1106,7 @@ export const useHiveStore = create<HiveState>()(
         set({ pushBusy: false });
         if (!res.ok) return { ok: false, error: res.error };
         set((s) => ({
-          audits: [audit("RO", `Pushed approved work to ${repo}`), ...s.audits].slice(0, 80),
+          audits: logAudits(s.audits, [audit("RO", `Pushed approved work to ${repo}`)], "instant"),
         }));
         return { ok: true };
       },

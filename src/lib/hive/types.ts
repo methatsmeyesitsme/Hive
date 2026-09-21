@@ -99,6 +99,8 @@ export type AuditEvent = {
   at: number;
   actor: string;
   action: string;
+  /** When this activity finished. Missing while it is still running (its timer keeps growing). */
+  endedAt?: number;
 };
 
 export type FileLock = {

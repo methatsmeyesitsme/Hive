@@ -1,13 +1,29 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { PanelRight, Snowflake, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { auditDurationMs, hasOpenAudit } from "@/lib/hive/audit-log";
 import { MAX_AGENTS_TOTAL, MAX_SPLITTERS, MODEL_CLASS } from "@/lib/hive/constants";
+import { formatDuration } from "@/lib/hive/duration";
+import { describeModelStatus, getModelStatus, subscribeModelStatus } from "@/lib/hive/local-model";
 import { perf, perfRows } from "@/lib/hive/perf";
 import { useHiveStore } from "@/lib/hive/store";
+import type { AuditEvent } from "@/lib/hive/types";
 import { cn } from "@/lib/utils";
+
+/** The current time, refreshed about ten times a second while `active` so a running timer visibly grows. */
+function useNow(active: boolean, everyMs = 100): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), everyMs);
+    return () => window.clearInterval(id);
+  }, [active, everyMs]);
+  return now;
+}
 
 export function StatusPanel({
   onClose,
@@ -29,6 +45,8 @@ export function StatusPanel({
   const frozen = useHiveStore((s) => s.frozen);
   const audits = useHiveStore((s) => s.audits);
   const lastRun = useSyncExternalStore(perf.subscribe, perf.getLast, perf.getLast);
+  const recent = audits.slice(0, 10);
+  const now = useNow(hasOpenAudit(recent));
 
   return (
     <aside className="flex h-full w-full flex-col border-l border-line bg-navy-2">
@@ -79,6 +97,7 @@ export function StatusPanel({
           <ExecBlock name="MC" activity={status.mc} />
           <ExecBlock name="HRC" activity={status.hrc} />
           <ExecBlock name="RO" activity={status.ro} />
+          <ModelBlock />
 
           <Separator />
 
@@ -190,11 +209,17 @@ export function StatusPanel({
               Recent activity
             </p>
             <ul className="space-y-2">
-              {audits.slice(0, 10).map((a) => (
-                <li key={a.id} className="text-[11px] leading-snug text-mist">
-                  <span className="font-mono text-honey/80">{a.actor}</span>
-                  <span className="text-dim"> · </span>
-                  {a.action}
+              {recent.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-start justify-between gap-3 text-[11px] leading-snug text-mist"
+                >
+                  <span className="min-w-0">
+                    <span className="font-mono text-honey/80">{a.actor}</span>
+                    <span className="text-dim"> · </span>
+                    {a.action}
+                  </span>
+                  <ActivityTime event={a} now={now} />
                 </li>
               ))}
               {audits.length === 0 && <li className="text-xs text-dim">Quiet.</li>}
@@ -243,6 +268,59 @@ function ExecBlock({ name, activity }: { name: string; activity: string }) {
       >
         {activity}
       </p>
+    </div>
+  );
+}
+
+/** How long an activity took; while it is still going, a live timer that keeps growing. */
+function ActivityTime({ event, now }: { event: AuditEvent; now: number }) {
+  const running = event.endedAt === undefined;
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center gap-1 font-mono tabular-nums",
+        running ? "text-honey" : "text-dim",
+      )}
+      data-testid="activity-time"
+      data-running={running}
+      title={running ? "Still running" : "How long this took"}
+    >
+      {running && <span className="size-1.5 animate-pulse rounded-full bg-honey" aria-hidden />}
+      {formatDuration(auditDurationMs(event, now))}
+    </span>
+  );
+}
+
+/** The on-device model: not loaded, downloading, ready (and on what), or why it could not start. */
+function ModelBlock() {
+  const m = useSyncExternalStore(subscribeModelStatus, getModelStatus, getModelStatus);
+  const loading = describeModelStatus(m);
+  const where = m.device === "webgpu" ? "GPU" : "CPU";
+  return (
+    <div data-testid="model-status">
+      <p className="font-display text-xs font-semibold tracking-[0.18em] text-honey">MODEL</p>
+      {loading ? (
+        <>
+          <p className="mt-1 text-sm text-fog">{loading}</p>
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-navy-4">
+            <div
+              className="h-full rounded-full bg-honey transition-[width] duration-200"
+              style={{ width: `${Math.max(4, Math.round(m.progress * 100))}%` }}
+            />
+          </div>
+        </>
+      ) : m.stage === "ready" ? (
+        <p className="mt-1 text-sm text-fog">
+          {m.model} · {where}
+          {m.dtype ? ` · ${m.dtype}` : ""} · ready
+        </p>
+      ) : m.stage === "error" ? (
+        <p className="mt-1 text-xs leading-relaxed text-danger">
+          Could not start. Hive will retry with a smaller file when you send a request.
+        </p>
+      ) : (
+        <p className="mt-1 text-sm text-dim">Not loaded yet</p>
+      )}
     </div>
   );
 }

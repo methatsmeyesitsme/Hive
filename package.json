@@ -16,7 +16,8 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/hive/mc-parse.test.ts src/lib/hive/local-model.test.ts src/lib/hive/splitter.test.ts src/lib/hive/perf.test.ts src/lib/hive/local-model.run.test.ts src/lib/hive/version.test.ts src/lib/hive/local-model.recover.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/hive/mc-parse.test.ts src/lib/hive/local-model.test.ts src/lib/hive/splitter.test.ts src/lib/hive/perf.test.ts src/lib/hive/local-model.run.test.ts src/lib/hive/version.test.ts src/lib/hive/local-model.recover.test.ts src/lib/hive/local-model.load.test.ts src/lib/hive/duration.test.ts src/lib/hive/audit-log.test.ts",
+    "test:hive": "node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/hive/mc-parse.test.ts src/lib/hive/local-model.test.ts src/lib/hive/splitter.test.ts src/lib/hive/perf.test.ts src/lib/hive/local-model.run.test.ts src/lib/hive/version.test.ts src/lib/hive/local-model.recover.test.ts src/lib/hive/local-model.load.test.ts src/lib/hive/duration.test.ts src/lib/hive/audit-log.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "build:static": "vite build --config artifact/vite.config.ts && node artifact/publish-docs.mjs"

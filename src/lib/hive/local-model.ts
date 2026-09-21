@@ -5,6 +5,12 @@
  * round-trip: the weights are downloaded once by the browser, cached, and
  * executed on WebGPU when available (falling back to WASM/CPU).
  *
+ * Qwen ships in several file sizes: q4f16 ~480 MB (WebGPU only), q8 ~510 MB and
+ * q4 ~790 MB. Many phones and low-memory browsers cannot allocate the 790 MB file
+ * ("Can't create a session. failed to allocate a buffer of size 786156820"), so
+ * Hive tries the smaller files first and steps down through every Qwen variant
+ * before it gives up.
+ *
  * Transformers.js is loaded from a pinned CDN URL at runtime instead of being
  * bundled. Its Node build pulls in native onnxruntime-node binaries, which the
  * SSR/Vercel build cannot bundle; the CDN import keeps this module out of that
@@ -31,6 +37,9 @@ export type LocalChatMessage = {
 export type LocalDevice = "webgpu" | "wasm";
 export type LocalDtype = "q4" | "q4f16" | "q8";
 export type LocalBackend = { device: LocalDevice; dtype: LocalDtype; model: ModelSpec };
+
+/** Approximate size in MB of each Qwen2.5-0.5B model file. Bigger files need more memory to open. */
+export const APPROX_FILE_MB: Record<LocalDtype, number> = { q4f16: 480, q8: 512, q4: 786 };
 
 type Generator = ((
   messages: LocalChatMessage[],
@@ -80,10 +89,19 @@ export type ModelStatus = {
   device: LocalDevice | null;
   /** Display name of the model being loaded or running. */
   model: string | null;
+  /** Which model file is loaded (q4f16 / q8 / q4), once ready. */
+  dtype: LocalDtype | null;
   error: string | null;
 };
 
-let status: ModelStatus = { stage: "idle", progress: 0, device: null, model: null, error: null };
+let status: ModelStatus = {
+  stage: "idle",
+  progress: 0,
+  device: null,
+  model: null,
+  dtype: null,
+  error: null,
+};
 const listeners = new Set<(s: ModelStatus) => void>();
 
 function setStatus(patch: Partial<ModelStatus>) {
@@ -93,6 +111,15 @@ function setStatus(patch: Partial<ModelStatus>) {
 
 export function getModelStatus(): ModelStatus {
   return status;
+}
+
+/** One line about what the model is doing while it loads, or null when it is not loading. */
+export function describeModelStatus(s: ModelStatus): string | null {
+  if (s.stage !== "loading") return null;
+  const name = s.model ?? "on-device model";
+  if (s.progress >= 0.995) return `Starting ${name}…`;
+  if (s.progress > 0) return `Downloading ${name}… ${Math.round(s.progress * 100)}%`;
+  return `Loading ${name}…`;
 }
 
 /** Subscribe to load progress. Returns an unsubscribe function. */
@@ -119,27 +146,43 @@ export function effectiveRung(search: string): number {
 }
 
 /**
- * Which model/backend/model-file combinations to try, in order.
+ * Which model/backend/model-file combinations to try, in order. Qwen only: every
+ * entry is the same model in a different file size or on a different backend.
  *
- * iOS uses the CPU (WASM) backend, with the smaller 8-bit Qwen file. On other
- * devices WebGPU comes first with a WASM fallback. Overrides on the page address:
+ *   WebGPU with fp16 shaders: q4f16 (smallest, fastest) -> q4 -> CPU q8 -> CPU q4
+ *   WebGPU without fp16:      q4 -> CPU q8 -> CPU q4
+ *   CPU only (iOS, no WebGPU): q8 -> q4
+ *
+ * The 8-bit file (512 MB) comes before the 4-bit file (786 MB) on the CPU because
+ * browsers often cannot allocate the bigger one. Overrides on the page address:
  * `?device=wasm`, `?dtype=q4|q4f16|q8`, `?model=qwen|360m|135m`.
  */
-export function pickBackends(search: string, hasWebGpu: boolean, ios: boolean): LocalBackend[] {
+export function pickBackends(
+  search: string,
+  hasWebGpu: boolean,
+  ios: boolean,
+  hasShaderF16 = false,
+): LocalBackend[] {
   const params = new URLSearchParams(search);
   const model = MODEL_LADDER[effectiveRung(search)];
+  const isQwen = model === MODEL_LADDER[0];
   const forcedDtype = params.get("dtype");
   const dtype: LocalDtype | null =
     forcedDtype === "q4" || forcedDtype === "q4f16" || forcedDtype === "q8" ? forcedDtype : null;
 
+  // The CPU never gets the fp16 file.
+  const wasmDtypes: LocalDtype[] = dtype
+    ? [dtype === "q4f16" ? "q4" : dtype]
+    : isQwen
+      ? ["q8", "q4"]
+      : ["q4"];
+  const wasm: LocalBackend[] = wasmDtypes.map((d) => ({ device: "wasm", dtype: d, model }));
+
   const wasmOnly = params.get("device") === "wasm" || ios || !hasWebGpu;
-  // Qwen on an iPhone uses the smaller 8-bit file; everything else uses 4-bit.
-  const wasmDefault: LocalDtype = ios && model === MODEL_LADDER[0] ? "q8" : "q4";
-  if (wasmOnly) return [{ device: "wasm", dtype: dtype ?? wasmDefault, model }];
-  return [
-    { device: "webgpu", dtype: dtype ?? "q4", model },
-    { device: "wasm", dtype: dtype === "q4f16" ? "q4" : (dtype ?? "q4"), model },
-  ];
+  if (wasmOnly) return wasm;
+
+  const gpuDtypes: LocalDtype[] = dtype ? [dtype] : isQwen && hasShaderF16 ? ["q4f16", "q4"] : ["q4"];
+  return [...gpuDtypes.map((d): LocalBackend => ({ device: "webgpu", dtype: d, model })), ...wasm];
 }
 
 function detectIOS(): boolean {
@@ -177,12 +220,18 @@ const WEBGPU_FAIL_LIMIT = 1;
 
 async function candidateBackends(): Promise<LocalBackend[]> {
   let hasWebGpu = false;
+  let hasShaderF16 = false;
   const gpu = (navigator as unknown as {
-    gpu?: { requestAdapter: () => Promise<unknown | null> };
+    gpu?: {
+      requestAdapter: () => Promise<{ features?: { has?: (name: string) => boolean } } | null>;
+    };
   }).gpu;
   if (gpu) {
     try {
-      hasWebGpu = Boolean(await gpu.requestAdapter());
+      const adapter = await gpu.requestAdapter();
+      hasWebGpu = Boolean(adapter);
+      // fp16 shaders let WebGPU use the smaller, faster q4f16 file.
+      hasShaderF16 = Boolean(adapter?.features?.has?.("shader-f16"));
     } catch {
       hasWebGpu = false;
     }
@@ -191,7 +240,22 @@ async function candidateBackends(): Promise<LocalBackend[]> {
     typeof location === "undefined" ? "" : location.search,
     hasWebGpu && !avoidWebGpu,
     detectIOS(),
+    hasShaderF16,
   );
+}
+
+/**
+ * Model-file combinations that already failed on this page, so a retry does not
+ * download and try the same doomed file again. Cleared when everything has failed.
+ */
+const failedBackends = new Set<string>();
+
+/** How many CPU threads the WASM runtime may use. More than one needs a cross-origin-isolated page. */
+export function wasmThreads(isolated: boolean, cores: number, search = ""): number {
+  const forced = Number(new URLSearchParams(search).get("threads"));
+  if (isolated && Number.isFinite(forced) && forced >= 1 && forced <= 8) return Math.floor(forced);
+  if (!isolated) return 1;
+  return Math.max(1, Math.min(4, Math.floor((cores || 2) / 2)));
 }
 
 /** Breadcrumb text for a download fraction (0..1), bucketed so it is written rarely. */
@@ -245,6 +309,14 @@ export function takeLastBreadcrumb(): Breadcrumb | null {
   }
 }
 
+function backendLabel({ device, dtype, model }: LocalBackend): string {
+  return `${model.name} ${device}/${dtype}`;
+}
+
+/** Generations run on the current session; a long-used WebGPU session is recycled between projects. */
+let runsSinceLoad = 0;
+const WORN_AFTER_RUNS = 4;
+
 type Loaded = { generator: Generator; device: LocalDevice; label: string; mod: TransformersModule };
 let loading: Promise<Loaded> | null = null;
 
@@ -297,16 +369,32 @@ function loadModel(): Promise<Loaded> {
     if (mod.env) {
       if (flags.get("cache") === "off") mod.env.useBrowserCache = false;
       const wasm = mod.env.backends?.onnx?.wasm;
-      if (wasm) wasm.numThreads = 1;
+      if (wasm) {
+        const isolated = typeof crossOriginIsolated !== "undefined" && crossOriginIsolated;
+        const cores = typeof navigator === "undefined" ? 2 : (navigator.hardwareConcurrency ?? 2);
+        wasm.numThreads = wasmThreads(isolated, cores, flags.toString());
+      }
     }
     const sessionOptions = useLowMemory(flags.toString(), detectIOS())
       ? { graphOptimizationLevel: "disabled", enableCpuMemArena: false, enableMemPattern: false }
       : undefined;
 
     let lastError: unknown = null;
-    for (const backend of await candidateBackends()) {
+    let ladder = await candidateBackends();
+    const untried = ladder.filter((b) => !failedBackends.has(backendLabel(b)));
+    if (untried.length > 0) ladder = untried;
+    else failedBackends.clear(); // everything failed before: memory may have been freed, try again
+
+    // Sizes (MB) of files that ran out of memory, per backend: anything at least that big will too.
+    const tooBig: { device: LocalDevice; mb: number }[] = [];
+    for (const backend of ladder) {
       const { device, dtype, model } = backend;
-      const label = `${model.name} ${device}/${dtype}`;
+      const label = backendLabel(backend);
+      if (tooBig.some((t) => t.device === device && APPROX_FILE_MB[dtype] >= t.mb)) {
+        failedBackends.add(label); // cannot fit either; a later retry starts over from the smallest file
+        continue;
+      }
+      if (device === "webgpu" && avoidWebGpu) continue; // the GPU session already died on this page
       try {
         attempt = label;
         lastLabel = "";
@@ -321,7 +409,8 @@ function loadModel(): Promise<Loaded> {
           session_options: sessionOptions,
         });
         const tReady = perf.now();
-        setStatus({ stage: "ready", progress: 1, device });
+        runsSinceLoad = 0;
+        setStatus({ stage: "ready", progress: 1, device, dtype });
         writeCrumb(null);
         perf.recordLoad({
           label,
@@ -334,9 +423,13 @@ function loadModel(): Promise<Loaded> {
       } catch (err) {
         lastError = err;
         files.clear();
+        failedBackends.add(label);
+        if (isMemoryFailure(err)) tooBig.push({ device, mb: APPROX_FILE_MB[dtype] });
         // A WebGPU abort/OrtRun during load means the GPU session is already dead —
         // skip further WebGPU attempts in this page lifetime.
         if (device === "webgpu" && isRuntimeFailure(err)) avoidWebGpu = true;
+        // Let the browser free what the failed attempt held before the next one starts.
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
     }
     throw lastError ?? new Error("No usable compute backend");
@@ -370,6 +463,8 @@ export type GenerateOptions = {
   label?: string;
   /** End generation as soon as this returns true for the text produced so far. */
   stopWhen?: (textSoFar: string) => boolean;
+  /** Cancels the generation: the model stops within a token and the call rejects with GenerationCancelled. */
+  signal?: AbortSignal;
 };
 
 /** Errors from the runtime itself (a lost GPU device, a failed buffer download), not from the request. */
@@ -381,10 +476,27 @@ export function isAbortError(err: unknown): boolean {
   return /operation was aborted|AbortError/i.test(message);
 }
 
+/** The browser could not find enough memory (opening a model file, or growing the WASM heap). */
+export function isMemoryFailure(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /failed to allocate|allocation failed|array buffer allocation|invalid array length|out of memory|cannot enlarge memory/i.test(
+    message,
+  );
+}
+
 export function isRuntimeFailure(err: unknown): boolean {
   if (isAbortError(err)) return true;
+  if (isMemoryFailure(err)) return true;
   const message = err instanceof Error ? err.message : String(err);
-  return /OrtRun|onnxruntime|buffer_manager|webgpu|GPUDevice|device (was )?lost|out of memory/i.test(message);
+  return /OrtRun|onnxruntime|buffer_manager|webgpu|GPUDevice|device (was )?lost|Aborted\(/i.test(message);
+}
+
+/** Thrown when the person cancels a run; never treated as a runtime failure. */
+export class GenerationCancelled extends Error {
+  constructor() {
+    super("Generation cancelled");
+    this.name = "GenerationCancelled";
+  }
 }
 
 /** In-flight dispose so a new load never overlaps a teardown (that abort is "The operation was aborted"). */
@@ -425,11 +537,37 @@ export async function releaseModel(): Promise<void> {
   await resetModel();
 }
 
+/**
+ * Like `releaseModel`, but only once the session has run a few generations. A fresh
+ * session stays loaded, so switching projects does not throw away a model that took
+ * seconds to open; a well-used WebGPU session is recycled before it starts to fail.
+ */
+export async function releaseModelIfWorn(): Promise<boolean> {
+  if (!loading || runsSinceLoad < WORN_AFTER_RUNS) return false;
+  await resetModel();
+  return true;
+}
+
+let preloadStarted = false;
+
+/**
+ * Start opening the model in the background, once per page, so the first request
+ * does not also pay for the download and start-up. `?preload=off` disables it.
+ * A failure here is silent: the next request retries with the fallback ladder.
+ */
+export function startModelPreload(): void {
+  if (preloadStarted || !localModelSupported()) return;
+  if (new URLSearchParams(location.search).get("preload") === "off") return;
+  preloadStarted = true;
+  void loadModel().catch(() => undefined);
+}
+
 export function generateChat(
   messages: LocalChatMessage[],
   options: GenerateOptions,
 ): Promise<{ text: string; device: LocalDevice }> {
   const generateOnce = async ({ generator, device, label, mod }: Loaded) => {
+    if (options.signal?.aborted) throw new GenerationCancelled();
     setBreadcrumb(`writing ${options.label ?? "a reply"}`, label);
 
     const maxNew =
@@ -447,9 +585,14 @@ export function generateChat(
     let tokens = 0;
     let stoppedEarly = false;
     let soFar = "";
+    let onCancel: (() => void) | null = null;
     if (mod.TextStreamer && mod.InterruptableStoppingCriteria && generator.tokenizer) {
       const stopper = new mod.InterruptableStoppingCriteria();
       callOptions.stopping_criteria = stopper;
+      if (options.signal) {
+        onCancel = () => stopper.interrupt();
+        options.signal.addEventListener("abort", onCancel, { once: true });
+      }
       callOptions.streamer = new mod.TextStreamer(generator.tokenizer, {
         skip_prompt: true,
         skip_special_tokens: true,
@@ -471,6 +614,7 @@ export function generateChat(
     const finish = (text: string) => {
       const t1 = perf.now();
       writeCrumb(null);
+      runsSinceLoad += 1;
       const decodeMs = tFirst === null ? null : t1 - tFirst;
       perf.addGen({
         label: options.label ?? "reply",
@@ -488,14 +632,20 @@ export function generateChat(
 
     try {
       const out = await generator(messages, callOptions);
+      // Cancelled mid-way: the stopper ended the run early, so the text is unfinished. Drop it.
+      if (options.signal?.aborted) throw new GenerationCancelled();
       return finish(out[0]?.generated_text?.at(-1)?.content ?? soFar);
     } catch (err) {
+      // A cancel can surface as AbortError on WebGPU. It is not a GPU failure, so do not recover from it.
+      if (options.signal?.aborted) throw new GenerationCancelled();
       // Interrupting once </html> is in the stream often surfaces as AbortError on WebGPU.
       // The page is already complete — return it instead of failing the run.
       if (isAbortError(err) && soFar && (stoppedEarly || options.stopWhen?.(soFar))) {
         return finish(soFar);
       }
       throw err;
+    } finally {
+      if (onCancel) options.signal?.removeEventListener("abort", onCancel);
     }
   };
 

@@ -4,8 +4,11 @@ import {
   buildPlan,
   extractHtml,
   isUsablePage,
+  looksLikeApp,
+  looksLikeBuild,
   pageTitle,
   parseBrief,
+  polishHtml,
   repairHtml,
 } from "./mc-parse.ts";
 
@@ -102,5 +105,75 @@ describe("isUsablePage / pageTitle", () => {
   it("reads the title", () => {
     assert.equal(pageTitle("<title> Clay Studio </title>", "x"), "Clay Studio");
     assert.equal(pageTitle("<p>no title</p>", "x"), "x");
+  });
+});
+
+describe("looksLikeApp", () => {
+  it("treats tools, clocks, calculators and games as apps", () => {
+    assert.equal(looksLikeApp("make a app that shows the current time"), true);
+    assert.equal(looksLikeApp("build me a pomodoro timer"), true);
+    assert.equal(looksLikeApp("a tip calculator"), true);
+    assert.equal(looksLikeApp("create a todo list app"), true);
+    assert.equal(looksLikeApp("snake game"), true);
+  });
+  it("keeps websites and landing pages as pages", () => {
+    assert.equal(looksLikeApp("build a landing page for my bakery"), false);
+    assert.equal(looksLikeApp("make a website for a ceramics studio"), false);
+    assert.equal(looksLikeApp("a portfolio app for photographers"), false);
+    assert.equal(looksLikeApp("what is a hero section?"), false);
+  });
+  it("the request from the bug report is a build request and an app", () => {
+    assert.equal(looksLikeBuild("make a app that shows the current time"), true);
+    assert.equal(looksLikeApp("make a app that shows the current time"), true);
+  });
+});
+
+describe("isUsablePage for small apps", () => {
+  const clock =
+    "<!doctype html><html><body><h1>Clock</h1><div id=\"t\"></div><script>const t=document.getElementById('t');setInterval(()=>{t.textContent=new Date().toLocaleTimeString()},1000);</script></body></html>";
+  it("accepts a clock: little text, but a finished script and real markup", () => {
+    assert.equal(isUsablePage(clock), true);
+  });
+  it("still rejects an empty shell, and a script with nothing to act on", () => {
+    assert.equal(isUsablePage("<!doctype html><html><body></body></html>"), false);
+    assert.equal(
+      isUsablePage("<!doctype html><html><body><script>console.log('a long enough script body here');</script></body></html>"),
+      false,
+    );
+  });
+  it("rejects a tiny static page with no script", () => {
+    assert.equal(isUsablePage("<!doctype html><html><body><h1>Hello there</h1></body></html>"), false);
+  });
+  it("the repaired output of a cut-off script is not treated as a working app", () => {
+    const cut = repairHtml("<!doctype html><html><body><h1>Clock</h1><div id='t'></div><script>const t = doc");
+    assert.equal(cut.includes("<script"), false);
+    assert.equal(isUsablePage(cut), false);
+  });
+});
+
+describe("polishHtml", () => {
+  it("adds charset, a viewport tag and a reset at the start of the head, ahead of the model's own CSS", () => {
+    const out = polishHtml("<!doctype html><html><head><title>T</title><style>body{margin:9px}</style></head><body>x</body></html>");
+    assert.match(out, /<head><meta charset="utf-8"><meta name="viewport"[^>]+><style id="hive-base">/);
+    assert.ok(out.indexOf("hive-base") < out.indexOf("body{margin:9px}"), "the model's rules come later, so they win");
+    assert.match(out, /<title>T<\/title>/);
+  });
+  it("does not duplicate tags the model already wrote", () => {
+    const out = polishHtml(
+      '<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"></head><body>x</body></html>',
+    );
+    assert.equal((out.match(/charset/gi) ?? []).length, 1);
+    assert.equal((out.match(/name="viewport"/gi) ?? []).length, 1);
+  });
+  it("creates a head when the page has none", () => {
+    const withHtml = polishHtml("<!doctype html><html><body>x</body></html>");
+    assert.match(withHtml, /<html><head>.*<\/head><body>/);
+    const bare = polishHtml("<!doctype html><body>x</body>");
+    assert.match(bare, /^<!doctype html><head>/i);
+  });
+  it("leaves the visible text and the title alone", () => {
+    const html = "<!doctype html><html><head><title>Clay</title></head><body><h1>Hi there</h1></body></html>";
+    assert.equal(pageTitle(polishHtml(html), "x"), "Clay");
+    assert.match(polishHtml(html), /<h1>Hi there<\/h1>/);
   });
 });
