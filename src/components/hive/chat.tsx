@@ -1,4 +1,4 @@
-import { Paperclip, Send, Square, Trash2, X } from "lucide-react";
+import { Paperclip, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,7 +7,6 @@ import { useHiveStore } from "@/lib/hive/store";
 import { cn, formatBytes, nid } from "@/lib/utils";
 import { StatusBar } from "./status-bar";
 import { ResultBlock } from "./result-block";
-import { DeleteProjectDialog } from "./delete-project-dialog";
 
 const STARTERS = [
   "Build me a landing page for a ceramics studio",
@@ -21,6 +20,7 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
   const cancel = useHiveStore((s) => s.cancel);
   const phase = useHiveStore((s) => s.phase);
   const frozen = useHiveStore((s) => s.frozen);
+  const deleteProject = useHiveStore((s) => s.deleteProject);
   const aiAvailable = useHiveStore((s) => s.aiAvailable);
   const artifact = project?.artifact ?? null;
 
@@ -34,7 +34,6 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
 
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -87,6 +86,21 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
             {project?.repoFullName ? ` · ${project.repoFullName}` : ""}
           </p>
         </div>
+        {project && (
+          <button
+            type="button"
+            className="sm:hidden rounded-md p-2 text-dim hover:bg-navy-4 hover:text-danger"
+            onClick={() => {
+              if (window.confirm(`Delete “${project.name}”?`) && window.confirm(`Confirm permanent deletion of “${project.name}”?`)) {
+                deleteProject(project.id);
+              }
+            }}
+            aria-label="Delete project"
+            title="Delete project"
+          >
+            🗑
+          </button>
+        )
         {project && (
           <Button
             type="button"
@@ -229,10 +243,6 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
           </form>
         </div>
       </div>
-      <DeleteProjectDialog
-        projectId={deleteOpen ? project?.id ?? null : null}
-        onOpenChange={(open) => setDeleteOpen(open)}
-      />
     </div>
   );
 }
