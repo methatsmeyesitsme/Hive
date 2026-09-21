@@ -1,11 +1,6 @@
 import { Copy, Download, Play, Upload } from "lucide-react";
 import { useMemo, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useHiveStore } from "@/lib/hive/store";
 import { toast } from "sonner";
@@ -31,7 +26,7 @@ export function PreviewDialog() {
   const code = useMemo(() => {
     if (!artifact) return "";
     if (artifact.files.length === 1) return artifact.files[0].content;
-    return artifact.files.map((f) => `/* ${f.path} */\n${f.content}`).join("\n\n");
+    return artifact.files.map((f) => `/* ${f.path} */\\n${f.content}`).join("\\n\\n");
   }, [artifact]);
 
   const download = () => {
@@ -47,10 +42,10 @@ export function PreviewDialog() {
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(artifact?.html || code);
-      toast.success("Copied to clipboard");
+      await navigator.clipboard.writeText(code);
+      toast.success("Copied source code to clipboard");
     } catch {
-      toast.error("Could not copy");
+      toast.error("Could not copy code");
     }
   };
 
@@ -71,28 +66,14 @@ export function PreviewDialog() {
             </DialogDescription>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              size="sm"
-              variant={tab === "view" ? "secondary" : "ghost"}
-              onClick={() => setTab("view")}
-            >
+            <Button size="sm" variant={tab === "view" ? "secondary" : "ghost"} onClick={() => setTab("view")}>
               View
             </Button>
-            <Button
-              size="sm"
-              variant={tab === "code" ? "secondary" : "ghost"}
-              onClick={() => setTab("code")}
-            >
+            <Button size="sm" variant={tab === "code" ? "secondary" : "ghost"} onClick={() => setTab("code")}>
               Code
             </Button>
             {ready && (
-              <Button
-                size="sm"
-                onClick={() => {
-                  runPreview();
-                  setFrameKey((k) => k + 1);
-                }}
-              >
+              <Button size="sm" onClick={() => { runPreview(); setFrameKey((k) => k + 1); }}>
                 <Play className="size-3.5" />
                 Run
               </Button>
@@ -101,9 +82,9 @@ export function PreviewDialog() {
               <Download className="size-3.5" />
               Download
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => void copy()} disabled={!artifact}>
+            <Button size="sm" variant="secondary" onClick={() => void copy()} disabled={!artifact || !code}>
               <Copy className="size-3.5" />
-              Copy
+              Copy Code
             </Button>
             {githubConnected && repo && ready && (
               <Button size="sm" variant="outline" onClick={() => void push()} disabled={pushBusy}>
@@ -116,35 +97,18 @@ export function PreviewDialog() {
 
         <div className="min-h-0 flex-1 bg-navy">
           {tab === "code" ? (
-            <pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-mist">
-              {code || "No code yet."}
-            </pre>
+            <pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-mist">{code || "No code yet."}</pre>
           ) : !artifact ? (
-            <div className="flex h-full items-center justify-center text-sm text-dim">
-              Nothing to preview yet.
-            </div>
+            <div className="flex h-full items-center justify-center text-sm text-dim">Nothing to preview yet.</div>
           ) : !ready ? (
-            <div className="flex h-full items-center justify-center text-sm text-mist">
-              Preview will appear when Hive finishes.
-            </div>
+            <div className="flex h-full items-center justify-center text-sm text-mist">Preview will appear when Hive finishes.</div>
           ) : previewRunning ? (
-            <iframe
-              key={frameKey}
-              title="Hive preview"
-              sandbox="allow-scripts allow-forms allow-modals"
-              srcDoc={artifact.html}
-              className="h-full w-full bg-fog"
-            />
+            <iframe key={frameKey} title="Hive preview" sandbox="allow-scripts allow-forms allow-modals" srcDoc={artifact.html} className="h-full w-full bg-fog" />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               <p className="font-display text-xl text-fog">Website ready</p>
-              <p className="max-w-sm text-sm text-mist">
-                Run launches the live preview. Download or copy the code anytime.
-              </p>
-              <Button onClick={runPreview}>
-                <Play className="size-4" />
-                Run
-              </Button>
+              <p className="max-w-sm text-sm text-mist">Run launches the live preview. Download or copy the source code anytime.</p>
+              <Button onClick={runPreview}><Play className="size-4" />Run</Button>
             </div>
           )}
         </div>
