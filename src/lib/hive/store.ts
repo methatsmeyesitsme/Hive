@@ -481,7 +481,7 @@ export const useHiveStore = create<HiveState>()(
         const pace = async (ms: number) => {
           const afterModel = modelSettled;
           const t = perf.now();
-          const capped = afterModel ? Math.min(ms, 12) : Math.min(ms, 180);
+          const capped = Math.min(ms, 8);
           await sleep(capped, signal);
           perf.pacing(afterModel, perf.now() - t);
         };

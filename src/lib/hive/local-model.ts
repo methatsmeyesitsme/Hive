@@ -185,7 +185,7 @@ export function useLowMemory(search: string, ios: boolean): boolean {
   const forced = new URLSearchParams(search).get("lowmem");
   if (forced === "on") return true;
   if (forced === "off") return false;
-  return true;
+  return ios;
 }
 
 export function isFirefox(userAgent: string): boolean {

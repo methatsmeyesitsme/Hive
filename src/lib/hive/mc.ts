@@ -176,8 +176,8 @@ function pageBudget(device: "webgpu" | "wasm", app = false): number {
   if (Number.isFinite(override) && override >= 200 && override <= 4000) return Math.floor(override);
   // Tighter budgets = much faster wall time on-device; early stop on </html> still applies.
   // An app needs a little more room than a page: a script cut off at the end does not run.
-  if (device === "webgpu") return app ? 900 : 1050;
-  return app ? 550 : 600;
+  if (device === "webgpu") return app ? 720 : 850;
+  return app ? 460 : 520;
 }
 
 type Brief = ReturnType<typeof parseBrief>;
