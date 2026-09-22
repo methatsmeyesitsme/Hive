@@ -185,7 +185,7 @@ export function useLowMemory(search: string, ios: boolean): boolean {
   const forced = new URLSearchParams(search).get("lowmem");
   if (forced === "on") return true;
   if (forced === "off") return false;
-  return true;
+  return ios;
 }
 
 export function isIOS(ua: string, platform: string, touchPoints: number): boolean {
@@ -413,18 +413,17 @@ export async function releaseModelIfWorn(): Promise<boolean> {
   if (!loading || runsSinceLoad < WORN_AFTER_RUNS) return false;
   await resetModel(); return true;
 }
-let preloadStarted = false;
 export function startModelPreload(): void {
-  if (preloadStarted || !localModelSupported()) return;
+  if (!localModelSupported()) return;
   if (new URLSearchParams(location.search).get("preload") === "off") return;
-  preloadStarted = true; void loadModel().catch(() => undefined);
+  void warmModelIfCached();
 }
 export function generateChat(messages: LocalChatMessage[], options: GenerateOptions): Promise<{ text: string; device: LocalDevice }> {
   const generateOnce = async ({ generator, device, label, mod }: Loaded) => {
     if (options.signal?.aborted) throw new GenerationCancelled();
     setBreadcrumb(`writing ${options.label ?? "a reply"}`, label);
     const maxNew = typeof options.maxNewTokens === "function" ? options.maxNewTokens(device) : options.maxNewTokens;
-    const callOptions: Record<string, unknown> = { max_new_tokens: maxNew, do_sample: true, temperature: options.temperature ?? 0.5, top_p: 0.9, repetition_penalty: 1.05 };
+    const callOptions: Record<string, unknown> = { max_new_tokens: maxNew, do_sample: false };
     const t0 = perf.now();
     let tFirst: number | null = null, tokens = 0, stoppedEarly = false, soFar = "";
     let onCancel: (() => void) | null = null;

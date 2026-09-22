@@ -212,7 +212,7 @@ export const useHiveStore = create<HiveState>()(
         if (!trimmed) return;
         const { projects } = get();
         if (projects.length === 0) {
-          const project = newProject("Untitled project");
+          const project = newProject("New Project");
           set({
             sessionName: trimmed,
             projects: [project],
@@ -253,7 +253,7 @@ export const useHiveStore = create<HiveState>()(
       createProject: (name, repoFullName) => {
         abortRun?.abort();
         abortRun = null;
-        const project = newProject(name?.trim() || "Untitled project", repoFullName ?? get().githubRepo);
+        const project = newProject(name?.trim() || "New Project", repoFullName ?? get().githubRepo);
         set((s) => ({
           projects: [project, ...s.projects],
           activeProjectId: project.id,
@@ -348,7 +348,7 @@ export const useHiveStore = create<HiveState>()(
 
         let project = state.activeProject();
         if (!project) {
-          const created = newProject("Untitled project");
+          const created = newProject("New Project");
           set({ projects: [created, ...state.projects], activeProjectId: created.id });
           project = created;
         }
