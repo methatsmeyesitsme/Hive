@@ -101,7 +101,8 @@ export function AppShell() {
         <button
           type="button"
           className="fixed right-4 top-5 z-50 flex size-12 items-center justify-center rounded-lg border border-line bg-navy-2 text-mist shadow-panel hover:bg-navy-3 hover:text-fog"
-          onClick={toggleRight}
+          onPointerDown={openRight}
+          onClick={openRight}
           aria-label="Open Hive status"
           title="Open Hive status"
         >
