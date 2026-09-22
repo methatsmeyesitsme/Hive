@@ -83,6 +83,7 @@ type HiveState = {
   openLeft: () => void;
   toggleRight: () => void;
   openRight: () => void;
+  closeRight: () => void;
   setLeftOpenMobile: (open: boolean) => void;
   setRightOpenMobile: (open: boolean) => void;
   setPreviewOpen: (open: boolean) => void;
@@ -247,6 +248,7 @@ export const useHiveStore = create<HiveState>()(
       openLeft: () => set({ leftCollapsed: false }),
       toggleRight: () => set((s) => ({ rightCollapsed: !s.rightCollapsed })),
       openRight: () => set({ rightCollapsed: false }),
+      closeRight: () => set({ rightCollapsed: true }),
       setLeftOpenMobile: (open) => set({ leftOpenMobile: open }),
       setRightOpenMobile: (open) => set({ rightOpenMobile: open }),
       setPreviewOpen: (open) => set({ previewOpen: open }),

@@ -22,6 +22,7 @@ export function AppShell() {
   const openLeft = useHiveStore((s) => s.openLeft);
   const toggleRight = useHiveStore((s) => s.toggleRight);
   const openRight = useHiveStore((s) => s.openRight);
+  const closeRight = useHiveStore((s) => s.closeRight);
   const leftOpenMobile = useHiveStore((s) => s.leftOpenMobile);
   const rightOpenMobile = useHiveStore((s) => s.rightOpenMobile);
   const setLeftOpenMobile = useHiveStore((s) => s.setLeftOpenMobile);
@@ -164,7 +165,7 @@ export function AppShell() {
               )}
             >
               {!rightCollapsed && (
-                <StatusPanel onCollapse={toggleRight} />
+                <StatusPanel onCollapse={closeRight} />
               )}
             </div>
           )}
