@@ -510,7 +510,6 @@ export const useHiveStore = create<HiveState>()(
               ...li,
               status: "failed" as const,
               activity: "Stopped",
-              agents: li.agents.map((a) => ({ ...a, status: "failed" as const })),
             })),
           });
           syncSplitters();
@@ -585,79 +584,59 @@ export const useHiveStore = create<HiveState>()(
           await pace(450);
           set({ status: { ...get().status, hrc: "Summoning Li" } });
 
-          const summoned: LieutenantState[] = [];
-          for (const li of pre.lieutenants) {
-            if (signal.aborted) return;
-            summoned.push({
-              letter: li.letter,
-              objective: li.objective,
-              activity: "Coming online",
-              agentAllowance: li.agentCount,
-              permissionGranted: true,
-              agents: [],
-              status: "summoning",
-              splitterId: splitOf.get(li.letter),
-            });
-            set({
-              lieutenants: [...summoned],
-              status: {
-                ...get().status,
-                hrc: `Summoned Li ${li.letter} on ${splitOf.get(li.letter) ?? "a Splitter"} · allowance ${li.agentCount}`,
-              },
-              audits: logAudits(get().audits, [
-                audit(
-                  "HRC",
-                  `Summoned Li ${li.letter} on ${splitOf.get(li.letter) ?? "a Splitter"} with allowance ${li.agentCount}`,
-                ),
-              ]),
-            });
-            syncSplitters();
-            await pace(220);
-          }
+          const summoned: LieutenantState[] = pre.lieutenants.map((li) => ({
+            letter: li.letter,
+            objective: li.objective,
+            activity: "Coming online",
+            agentAllowance: li.agentCount,
+            permissionGranted: true,
+            agents: [],
+            status: "working",
+            splitterId: splitOf.get(li.letter),
+          }));
 
+          // Agents are logical/virtual. Keep ownership in a private map so the
+          // browser never has to render or react to hundreds of AgentState objects.
+          const logicalAgentsByLi = new Map(
+            splitPlans.flatMap((sp) => sp.lieutenants.map((l) => [l.letter, l] as const)),
+          );
           let agentTotal = 0;
+          const visibleLocks: FileLock[] = [];
           for (let i = 0; i < summoned.length; i++) {
             const li = summoned[i];
             const plan = pre.lieutenants[i];
-            const logical = splitPlans
-              .flatMap((sp) => sp.lieutenants)
-              .find((l) => l.letter === li.letter);
+            const logical = logicalAgentsByLi.get(li.letter);
             for (let n = 0; n < li.agentAllowance; n++) {
               if (signal.aborted) return;
-              const agentId = logical?.agents[n]?.id ?? nid("ag");
+              const logicalAgent = logical?.agents[n];
+              const agentId = logicalAgent?.id ?? `S${li.splitterId ?? "0"}-Li${li.letter}-A${n + 1}`;
               const file =
-                logical?.agents[n]?.ownedFiles[0] ??
+                logicalAgent?.ownedFiles[0] ??
                 (plan.files[n % Math.max(1, plan.files.length)] || `work/${li.letter}/${n + 1}`);
               const ownerLabel = `${li.splitterId ? `${li.splitterId} · ` : ""}Li ${li.letter} · agent ${n + 1}`;
               acquireLock(lockMap, file, agentId, ownerLabel);
-              li.agents.push({
-                id: agentId,
-                liLetter: li.letter,
-                assignment: plan.objective,
-                status: "working",
-                ownedFiles: [file],
-              });
+              if (visibleLocks.length < 12) {
+                visibleLocks.push({ path: file, ownerId: agentId, ownerLabel });
+              }
               agentTotal += 1;
-              li.activity = `Managing ${li.agents.length} agents`;
-              li.status = "working";
-              set({
-                lieutenants: summoned.map((x) => ({ ...x, agents: [...x.agents] })),
-                agentTotal,
-                fileLocks: [...lockMap.entries()].map(([path, v]) => ({
-                  path,
-                  ownerId: v.ownerId,
-                  ownerLabel: v.ownerLabel,
-                })),
-                status: {
-                  mc: "Waiting for swarm readiness",
-                  hrc: `Managing ${agentTotal} active agents`,
-                  ro: get().status.ro,
-                },
-              });
-              syncSplitters();
-              await pace(70);
             }
+            li.activity = `Managing ${li.agentAllowance} agents`;
           }
+
+          set({
+            lieutenants: summoned,
+            agentTotal,
+            fileLocks: visibleLocks,
+            status: {
+              ...get().status,
+              hrc: `Managing ${agentTotal} active agents`,
+            },
+            audits: logAudits(get().audits, [
+              audit("HRC", `Summoned ${summoned.length} Li and initialized ${agentTotal} logical agents`),
+            ]),
+          });
+          syncSplitters();
+          await pace(80);
 
           set({
             phase: "distributing",
@@ -727,48 +706,17 @@ export const useHiveStore = create<HiveState>()(
           }
 
           // Merge real designated objectives onto the live swarm.
-          const merged: LieutenantState[] = allocated.lieutenants.map((li, idx) => {
-            const existing = summoned[idx];
-            const agents =
-              existing?.agents.map((a) => ({
-                ...a,
-                assignment: li.objective,
-                status: "working" as const,
-              })) ??
-              Array.from({ length: li.agentCount }, (_, n) => ({
-                id:
-                  splitPlans
-                    .flatMap((sp) => sp.lieutenants)
-                    .find((l) => l.letter === li.letter)?.agents[n]?.id ?? nid("ag"),
-                liLetter: li.letter,
-                assignment: li.objective,
-                status: "working" as const,
-                ownedFiles: li.files.slice(0, 1),
-              }));
-            return {
-              letter: li.letter,
-              objective: li.objective,
-              activity: `Managing ${agents.length} agents`,
-              agentAllowance: li.agentCount,
-              permissionGranted: true,
-              agents,
-              status: "working" as const,
-              splitterId: splitOf.get(li.letter),
-            };
-          });
-          const liveTotal = merged.reduce((s, l) => s + l.agents.length, 0);
-          set({
-            lieutenants: merged,
-            agentTotal: liveTotal,
-            status: {
-              mc: result.plan.objective.slice(0, 64),
-              hrc: `Managing ${liveTotal} agents on ${plural(splitPlans.length, "Splitter")}`,
-              ro: result.plan.researchNeeded
-                ? `Researching ${result.plan.researchTopic || "external context"}`
-                : "Standing by",
-            },
-          });
-          syncSplitters();
+          const merged: LieutenantState[] = allocated.lieutenants.map((li) => ({
+            letter: li.letter,
+            objective: li.objective,
+            activity: `Managing ${li.agentCount} agents`,
+            agentAllowance: li.agentCount,
+            permissionGranted: true,
+            agents: [],
+            status: "working" as const,
+            splitterId: splitOf.get(li.letter),
+          }));
+          const liveTotal = allocated.totalAgents;
 
           if (result.plan.researchNeeded) {
             set({
@@ -796,35 +744,24 @@ export const useHiveStore = create<HiveState>()(
             },
           });
 
-          const workTicks = 5;
+          const workTicks = 4;
+          const workActivities = [
+            "Working through assigned objectives",
+            "Checking file ownership",
+            "Collecting completed assignments",
+            "Reviewing agent work",
+          ];
           for (let t = 0; t < workTicks; t++) {
             if (signal.aborted) return;
             tick = t;
             set((s) => ({
               lieutenants: s.lieutenants.map((li, i) => ({
                 ...li,
-                activity:
-                  t === workTicks - 1
-                    ? "Reviewing agent work"
-                    : [
-                        `Managing ${li.agents.length} agents`,
-                        "Answering non-web questions",
-                        "Checking file ownership",
-                        "Collecting completed assignments",
-                      ][(t + i) % 4],
-                agents: li.agents.map((a, n) => ({
-                  ...a,
-                  status:
-                    t > 2 && n % 3 === t % 3
-                      ? "done"
-                      : t === 1 && n % 5 === 0
-                        ? "research"
-                        : "working",
-                })),
+                activity: workActivities[(t + i) % workActivities.length],
               })),
             }));
             syncSplitters();
-            await pace(420);
+            await pace(120);
           }
 
           set({
@@ -838,7 +775,6 @@ export const useHiveStore = create<HiveState>()(
               ...li,
               status: "reviewing",
               activity: "Stitching mini-swarm work",
-              agents: li.agents.map((a) => ({ ...a, status: "done" })),
             })),
           });
           syncSplitters();

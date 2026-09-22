@@ -14,7 +14,7 @@ import type { AuditEvent } from "@/lib/hive/types";
 import { cn } from "@/lib/utils";
 
 /** The current time, refreshed about ten times a second while `active` so a running timer visibly grows. */
-function useNow(active: boolean, everyMs = 100): number {
+function useNow(active: boolean, everyMs = 250): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;

@@ -22,7 +22,7 @@ function splitterStatus(lis: LieutenantState[]): SplitterState["status"] {
 }
 
 function splitterActivity(status: SplitterState["status"], lis: LieutenantState[], tick: number): string {
-  const agents = lis.reduce((sum, l) => sum + l.agents.length, 0);
+  const agents = lis.reduce((sum, l) => sum + l.agentAllowance, 0);
   switch (status) {
     case "summoning":
       return lis.length === 0
