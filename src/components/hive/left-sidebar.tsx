@@ -91,43 +91,37 @@ export function LeftSidebar({
         )}
         <ul className="space-y-0.5 pb-3">
           {projects.map((p) => (
-            <li key={p.id} className="group relative">
-              <button
-                type="button"
+            <div key={p.id} className="group relative">
+              <div
                 className={cn(
                   navBtn(view === "workspace" && p.id === activeId),
-                  (!collapsed || mobile) && "pr-10",
+                  (!collapsed || mobile) && "justify-start",
+                  "cursor-pointer",
                 )}
                 onClick={() => selectProject(p.id)}
                 title={p.name}
               >
                 <Folder className="size-5 shrink-0" />
                 {(!collapsed || mobile) && (
-                  <span className="truncate">{p.name}</span>
+                  <button
+                    type="button"
+                    aria-label={\`Delete \${p.name}\`}
+                    title="Delete project"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteId(p.id);
+                    }}
+                    className="grid size-7 shrink-0 place-items-center rounded-md text-dim hover:bg-navy-4 hover:text-danger"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 )}
-              </button>
-              {(!collapsed || mobile) && (
-                <button
-                  type="button"
-                  aria-label={`Delete ${p.name}`}
-                  title="Delete project"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteId(p.id);
-                  }}
-                  className={cn(
-                    "z-10 absolute right-1 top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-dim hover:bg-navy-4 hover:text-danger",
-                    mobile
-                      ? "size-9"
-                      : "size-9 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-                  )}
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+                {(!collapsed || mobile) && (
+                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                )}
+              </div>
+            </div>
+          ))}        </ul>
       </ScrollArea>
 
       <div className="mt-auto border-t border-line p-2 space-y-0.5">
