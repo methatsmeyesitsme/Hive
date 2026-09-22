@@ -63,7 +63,7 @@ export function DeleteProjectDialog({
           {confirming
             ? "will be permanently removed from this browser. This cannot be undone."
             : rapidDeleteMode
-              ? "and its chat and page will be removed from this browser. You will be deleted after clicking this button."
+              ? "and its chat and page will be removed from this browser. it will be deleted immediately after clicking this button."
               : "and its chat and page will be removed from this browser. You will get one more confirmation before it is deleted."}
         </DialogDescription>
         <div className="mt-5 flex justify-end gap-2">
