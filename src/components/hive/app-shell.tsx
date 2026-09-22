@@ -19,6 +19,7 @@ export function AppShell() {
   const leftCollapsed = useHiveStore((s) => s.leftCollapsed);
   const rightCollapsed = useHiveStore((s) => s.rightCollapsed);
   const toggleLeft = useHiveStore((s) => s.toggleLeft);
+  const openLeft = useHiveStore((s) => s.openLeft);
   const toggleRight = useHiveStore((s) => s.toggleRight);
   const openRight = useHiveStore((s) => s.openRight);
   const leftOpenMobile = useHiveStore((s) => s.leftOpenMobile);
@@ -87,7 +88,7 @@ export function AppShell() {
         <button
           type="button"
           className="fixed left-4 top-4 z-50 flex size-12 items-center justify-center rounded-lg border border-line bg-navy-2 text-mist shadow-panel hover:bg-navy-3 hover:text-fog"
-          onClick={toggleLeft}
+          onClick={openLeft}
           aria-label="Open menu"
           title="Open menu"
         >
