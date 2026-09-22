@@ -185,7 +185,11 @@ export function useLowMemory(search: string, ios: boolean): boolean {
   const forced = new URLSearchParams(search).get("lowmem");
   if (forced === "on") return true;
   if (forced === "off") return false;
-  return ios;
+  return true;
+}
+
+export function isFirefox(userAgent: string): boolean {
+  return /Firefox\//i.test(userAgent) && !/Seamonkey\//i.test(userAgent);
 }
 
 export function isIOS(ua: string, platform: string, touchPoints: number): boolean {
@@ -217,9 +221,12 @@ async function candidateBackends(): Promise<LocalBackend[]> {
       hasWebGpu = false;
     }
   }
+  const search = typeof location === "undefined" ? "" : location.search;
+  const firefox = isFirefox(typeof navigator === "undefined" ? "" : navigator.userAgent);
+  const forcedWebGpu = new URLSearchParams(search).get("device") === "webgpu";
   return pickBackends(
-    typeof location === "undefined" ? "" : location.search,
-    hasWebGpu && !avoidWebGpu,
+    search,
+    hasWebGpu && !avoidWebGpu && (forcedWebGpu || !firefox),
     detectIOS(),
     hasShaderF16,
     maxStorageBufferBindingSize,

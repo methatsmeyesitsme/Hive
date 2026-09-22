@@ -9,6 +9,7 @@ import {
   MODEL_LADDER,
   pickBackends,
   progressLabel,
+  isFirefox,
   useLowMemory,
   wasmThreads,
 } from "./local-model.ts";
@@ -165,5 +166,14 @@ describe("describeModelStatus", () => {
     assert.equal(describeModelStatus(base), "Loading Qwen2.5-0.5B…");
     assert.equal(describeModelStatus({ ...base, progress: 0.426 }), "Downloading Qwen2.5-0.5B… 43%");
     assert.equal(describeModelStatus({ ...base, progress: 1 }), "Starting Qwen2.5-0.5B…");
+  });
+});
+
+
+describe("isFirefox", () => {
+  it("detects Firefox but not SeaMonkey", () => {
+    assert.equal(isFirefox("Mozilla/5.0 Firefox/156.0"), true);
+    assert.equal(isFirefox("Mozilla/5.0 Seamonkey/2.53"), false);
+    assert.equal(isFirefox("Mozilla/5.0 Chrome/140.0.0.0"), false);
   });
 });
