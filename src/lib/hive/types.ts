@@ -145,6 +145,7 @@ export type ExecPlan = {
 export type McTaskResult = {
   ok: true;
   mcMessage: string;
+  projectName: string;
   plan: ExecPlan;
   artifact: Artifact | null;
   memory: { title: string; content: string; source: MemoryEntry["source"] }[];
