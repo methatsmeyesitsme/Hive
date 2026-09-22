@@ -101,19 +101,6 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
             🗑
           </button>
         )
-        {project && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="sm:hidden text-dim hover:text-danger"
-            onClick={() => setDeleteOpen(true)}
-            aria-label="Delete project"
-            title="Delete project"
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        )}
       </header>
 
       <ScrollArea className="flex-1">
