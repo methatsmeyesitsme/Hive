@@ -11,6 +11,7 @@ export type Brief = {
   reply: string;
   objective: string;
   strategy: string;
+  projectName: string;
   build: boolean;
 };
 
@@ -59,6 +60,7 @@ export function parseBrief(text: string, prompt: string): Brief {
   const reply = field(text, "REPLY");
   const objective = field(text, "OBJECTIVE");
   const strategy = field(text, "STRATEGY");
+  const projectName = field(text, "NAME");
   const buildRaw = field(text, "BUILD").toLowerCase();
 
   let build: boolean;
@@ -66,6 +68,7 @@ export function parseBrief(text: string, prompt: string): Brief {
   else if (buildRaw.startsWith("yes")) build = true;
   else build = BUILD_WORDS.test(prompt);
 
+  const validName = projectName.split(/\s+/).filter(Boolean).slice(0, 4).join(" ").slice(0, 48);
   const hasLabels = Boolean(reply || objective || strategy);
   const looseReply = !hasLabels ? clean(text.split("\n")[0] ?? "") : "";
 
@@ -73,6 +76,7 @@ export function parseBrief(text: string, prompt: string): Brief {
     reply: (reply || looseReply || "On it. Hive is starting on this now.").slice(0, 500),
     objective: (objective || prompt.trim()).slice(0, 240) || "Complete the request",
     strategy: (strategy || "Draft the page, then refine structure and styling.").slice(0, 240),
+    projectName: validName || "New Project",
     build,
   };
 }
