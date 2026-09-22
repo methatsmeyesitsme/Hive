@@ -101,8 +101,15 @@ export function LeftSidebar({
                 onClick={() => selectProject(p.id)}
                 title={p.name}
               >
-                <Folder className="size-5 shrink-0" />
-                {(!collapsed || mobile) && (
+                <span className="relative size-5 shrink-0">
+                  <Folder
+                    className={cn(
+                      "size-5",
+                      mobile && p.id === activeId
+                        ? "hidden"
+                        : "group-hover:hidden",
+                    )}
+                  />
                   <button
                     type="button"
                     aria-label={\`Delete \${p.name}\`}
@@ -111,17 +118,24 @@ export function LeftSidebar({
                       e.stopPropagation();
                       setDeleteId(p.id);
                     }}
-                    className="grid size-7 shrink-0 place-items-center rounded-md text-dim hover:bg-navy-4 hover:text-danger"
+                    className={cn(
+                      "absolute inset-0 grid place-items-center rounded-md text-dim hover:bg-navy-4 hover:text-danger",
+                      mobile
+                        ? p.id === activeId
+                          ? ""
+                          : "hidden"
+                        : "hidden group-hover:grid",
+                    )}
                   >
                     <Trash2 className="size-4" />
                   </button>
-                )}
+                </span>
                 {(!collapsed || mobile) && (
                   <span className="min-w-0 flex-1 truncate">{p.name}</span>
                 )}
               </div>
             </div>
-          ))}        </ul>
+          ))}}        </ul>
       </ScrollArea>
 
       <div className="mt-auto border-t border-line p-2 space-y-0.5">
