@@ -209,12 +209,14 @@ async function writePage(data: RunInput, brief: Brief | null): Promise<McTaskRes
     lieutenants: buildPlan(true),
   };
 
+  const generatedName = (out.text.match(/^\s*NAME\s*:\s*(.+)$/im)?.[1] ?? "")
+    .trim().split(/\s+/).filter(Boolean).slice(0, 4).join(" ").slice(0, 48);
   const extracted = extractHtml(out.text);
   const html = extracted ? polishHtml(extracted) : null;
   if (!html || !isUsablePage(html)) {
     return {
       ok: true,
-      projectName: brief?.projectName ?? "New Project",
+      projectName: generatedName || brief?.projectName || "New Project",
       mcMessage:
         "The model didn't finish a page this time. Send it again, or add more detail about what you want.",
       plan,
