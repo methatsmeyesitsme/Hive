@@ -22,7 +22,6 @@ export function NewProjectDialog({
   const githubRepos = useHiveStore((s) => s.githubRepos);
   const createRepo = useHiveStore((s) => s.createRepo);
   const githubBusy = useHiveStore((s) => s.githubBusy);
-  const [name, setName] = useState("");
   const [repo, setRepo] = useState("");
   const [newRepo, setNewRepo] = useState("");
 
@@ -31,8 +30,7 @@ export function NewProjectDialog({
     if (newRepo.trim()) {
       repoFullName = await createRepo(newRepo.trim());
     }
-    createProject(name || "Untitled project", repoFullName);
-    setName("");
+    createProject("New Project", repoFullName);
     setRepo("");
     setNewRepo("");
     onOpenChange(false);
@@ -46,15 +44,6 @@ export function NewProjectDialog({
           Open a workspace. Connect a repository in Settings if you want RO to push later.
         </DialogDescription>
         <div className="mt-4 space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="np-name">Name</Label>
-            <Input
-              id="np-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Studio landing"
-            />
-          </div>
           {githubConnected && (
             <>
               <div className="space-y-1.5">
