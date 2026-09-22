@@ -146,9 +146,9 @@ describe("progressLabel", () => {
 });
 
 describe("useLowMemory", () => {
-  it("defaults on for stability (WebGPU + iOS)", () => {
+  it("defaults on for iOS and off for desktop so CPU inference can use normal runtime optimizations", () => {
     assert.equal(useLowMemory("", true), true);
-    assert.equal(useLowMemory("", false), true);
+    assert.equal(useLowMemory("", false), false);
   });
   it("?lowmem=on / off override", () => {
     assert.equal(useLowMemory("?lowmem=on", false), true);
