@@ -901,8 +901,8 @@ export const useHiveStore = create<HiveState>()(
             artifact,
             updatedAt: Date.now(),
             name:
-              p.name === "Untitled project" && result.artifact?.title
-                ? result.artifact.title.slice(0, 48)
+              p.name === "New Project" || p.name === "Untitled project"
+                ? result.projectName.slice(0, 48)
                 : p.name,
           }));
 
