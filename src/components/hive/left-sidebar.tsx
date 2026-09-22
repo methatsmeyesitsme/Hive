@@ -102,33 +102,36 @@ export function LeftSidebar({
                 title={p.name}
               >
                 <span className="relative size-5 shrink-0">
-                  <Folder
-                    className={cn(
-                      "size-5",
-                      mobile && p.id === activeId
-                        ? "hidden"
-                        : "group-hover:hidden",
-                    )}
-                  />
-                  <button
-                    type="button"
-                    aria-label={\`Delete \${p.name}\`}
-                    title="Delete project"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteId(p.id);
-                    }}
-                    className={cn(
-                      "absolute inset-0 grid place-items-center rounded-md text-dim hover:bg-navy-4 hover:text-danger",
-                      mobile
-                        ? p.id === activeId
-                          ? ""
-                          : "hidden"
-                        : "hidden group-hover:grid",
-                    )}
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
+                  {mobile && p.id === activeId ? (
+                    <button
+                      type="button"
+                      aria-label={`Delete ${p.name}`}
+                      title="Delete project"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteId(p.id);
+                      }}
+                      className="grid size-5 place-items-center rounded-md text-dim hover:bg-navy-4 hover:text-danger"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  ) : (
+                    <>
+                      <Folder className="size-5 group-hover:opacity-0" />
+                      <button
+                        type="button"
+                        aria-label={`Delete ${p.name}`}
+                        title="Delete project"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteId(p.id);
+                        }}
+                        className="absolute inset-0 grid size-5 place-items-center rounded-md text-dim opacity-0 hover:bg-navy-4 hover:text-danger group-hover:opacity-100"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </>
+                  )}
                 </span>
                 {(!collapsed || mobile) && (
                   <span className="min-w-0 flex-1 truncate">{p.name}</span>
