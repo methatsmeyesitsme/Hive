@@ -9,6 +9,27 @@ import { Button } from "@/components/ui/button";
 import { useHiveStore } from "@/lib/hive/store";
 import { useState } from "react";
 
+const DELETE_CONFIRMATION_WINDOW_MS = 60_000;
+let recentDeleteCount = 0;
+let lastDeleteAt = 0;
+
+function isRapidDeleteMode() {
+  const now = Date.now();
+  if (now - lastDeleteAt >= DELETE_CONFIRMATION_WINDOW_MS) {
+    recentDeleteCount = 0;
+  }
+  return recentDeleteCount >= 3;
+}
+
+function recordDeletion() {
+  const now = Date.now();
+  if (now - lastDeleteAt >= DELETE_CONFIRMATION_WINDOW_MS) {
+    recentDeleteCount = 0;
+  }
+  recentDeleteCount += 1;
+  lastDeleteAt = now;
+}
+
 export function DeleteProjectDialog({
   projectId,
   onOpenChange,
@@ -20,6 +41,7 @@ export function DeleteProjectDialog({
   const project = useHiveStore((s) => s.projects.find((p) => p.id === projectId) ?? null);
   const deleteProject = useHiveStore((s) => s.deleteProject);
   const [confirming, setConfirming] = useState(false);
+  const rapidDeleteMode = isRapidDeleteMode();
 
   const close = () => {
     setConfirming(false);
@@ -40,7 +62,9 @@ export function DeleteProjectDialog({
           {project ? `“${project.name}”` : "This project"}{" "}
           {confirming
             ? "will be permanently removed from this browser. This cannot be undone."
-            : "and its chat and page will be removed from this browser. You will get one more confirmation before it is deleted."}
+            : rapidDeleteMode
+              ? "and its chat and page will be removed from this browser. You will be deleted after clicking this button."
+              : "and its chat and page will be removed from this browser. You will get one more confirmation before it is deleted."}
         </DialogDescription>
         <div className="mt-5 flex justify-end gap-2">
           <DialogClose asChild>
@@ -53,11 +77,14 @@ export function DeleteProjectDialog({
             variant="danger"
             data-testid="confirm-delete-project"
             onClick={() => {
-              if (!confirming) {
+              if (!confirming && !isRapidDeleteMode()) {
                 setConfirming(true);
                 return;
               }
-              if (projectId) deleteProject(projectId);
+              if (projectId) {
+                deleteProject(projectId);
+                recordDeletion();
+              }
               close();
             }}
           >
