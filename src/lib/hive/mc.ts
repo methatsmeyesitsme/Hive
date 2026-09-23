@@ -46,6 +46,7 @@ type RunInput = {
   memory: { title: string; content: string }[];
   currentHtml?: string | null;
   projectName: string;
+  effort: number;
   /** Live progress while the model writes (called per token; the caller throttles). */
   onProgress?: (info: { label: string; tokens: number }) => void;
   /** Cancelling stops the model within a token, so the next request is not stuck behind it. */
@@ -166,15 +167,20 @@ function buildMessages(
 }
 
 /** Decoding is the slow part, so the page budget is tight. `?tokens=N` overrides it. */
-function pageBudget(device: "webgpu" | "wasm", app = false): number {
+function effortFactor(effort: number): number {
+  return 0.65 + Math.max(0, Math.min(100, effort)) / 100 * 0.85;
+}
+
+function pageBudget(device: "webgpu" | "wasm", app = false, effort = 50): number {
   const override = Number(
     new URLSearchParams(typeof location === "undefined" ? "" : location.search).get("tokens"),
   );
   if (Number.isFinite(override) && override >= 200 && override <= 4000) return Math.floor(override);
   // Tighter budgets = much faster wall time on-device; early stop on </html> still applies.
   // An app needs a little more room than a page: a script cut off at the end does not run.
-  if (device === "webgpu") return app ? 360 : 480;
-  return app ? 240 : 320;
+  const factor = effortFactor(effort);
+  const base = device === "webgpu" ? (app ? 300 : 400) : (app ? 200 : 270);
+  return Math.max(180, Math.round(base * factor));
 }
 
 type Brief = ReturnType<typeof parseBrief>;
@@ -194,7 +200,7 @@ async function writePage(
 
   const app = looksLikeApp(data.prompt);
   const out = await generateChat(messages, {
-    maxNewTokens: (device) => pageBudget(device, app),
+    maxNewTokens: (device) => pageBudget(device, app, data.effort),
     temperature: 0.5,
     label: app ? "app" : "page",
     stopWhen: (text) => /<\/html\s*>/i.test(text),
@@ -305,7 +311,7 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
     const briefMsgs = briefMessages(data);
     perf.prep(perf.now() - tPrep);
     const briefOut = await generateChat(briefMsgs, {
-      maxNewTokens: 56,
+      maxNewTokens: Math.max(36, Math.round(36 + effortFactor(data.effort) * 24)),
       temperature: 0.3,
       label: "brief",
       stopWhen: (text) => /BUILD\s*:\s*(yes|no)/i.test(text),

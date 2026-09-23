@@ -1,4 +1,4 @@
-import { Paperclip, Send, Square, X } from "lucide-react";
+import { ChevronUp, Paperclip, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,6 +34,8 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
 
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
+  const [effort, setEffort] = useState(50);
+  const [effortOpen, setEffortOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -48,7 +50,7 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
     setDraft("");
     const attached = files;
     setFiles([]);
-    await send(prompt, attached);
+    await send(prompt, attached, effort);
   };
 
   const onFiles = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -218,6 +220,46 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
                 <Square className="size-3.5 fill-current" />
               </Button>
             ) : (
+              <div className="relative shrink-0">
+                {effortOpen && (
+                  <div className="absolute bottom-full right-0 mb-2 w-64 rounded-lg border border-line bg-navy-2 p-3 shadow-xl">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-medium text-fog">Effort</span>
+                      <span className="text-[10px] font-mono text-dim">{effort < 34 ? "Low" : effort > 66 ? "High" : "Medium"}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={effort}
+                      onChange={(e) => setEffort(Number(e.target.value))}
+                      disabled={frozen || aiAvailable === false}
+                      aria-label="Effort"
+                      className="mt-3 w-full accent-[hsl(var(--honey))]"
+                    />
+                    <div className="mt-1 flex justify-between text-[10px] text-dim">
+                      <span>Lowest</span>
+                      <span>Highest</span>
+                    </div>
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setEffortOpen((open) => !open)}
+                  disabled={frozen || aiAvailable === false}
+                  aria-expanded={effortOpen}
+                  aria-label="Effort"
+                  title="Adjust effort"
+                  className="h-10 gap-1.5 px-2.5 text-xs"
+                >
+                  Effort
+                  <ChevronUp className={cn("size-3.5 transition-transform", effortOpen && "rotate-180")} />
+                </Button>
+              </div>
+            )}
+            {!running && (
               <Button
                 type="submit"
                 size="icon"

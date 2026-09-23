@@ -50,6 +50,7 @@ type HiveState = {
   previewOpen: boolean;
   previewRunning: boolean;
   aiAvailable: boolean | null;
+  effort: number;
 
   projects: Project[];
   activeProjectId: string | null;
@@ -88,13 +89,14 @@ type HiveState = {
   setRightOpenMobile: (open: boolean) => void;
   setPreviewOpen: (open: boolean) => void;
   runPreview: () => void;
+  setEffort: (effort: number) => void;
 
   createProject: (name?: string, repoFullName?: string | null) => void;
   selectProject: (id: string) => void;
   renameProject: (id: string, name: string) => void;
   deleteProject: (id: string) => void;
 
-  send: (text: string, attachments: Attachment[]) => Promise<void>;
+  send: (text: string, attachments: Attachment[], effort?: number) => Promise<void>;
   cancel: (reason?: string) => void;
   freeze: () => void;
 
@@ -253,6 +255,7 @@ export const useHiveStore = create<HiveState>()(
       setRightOpenMobile: (open) => set({ rightOpenMobile: open }),
       setPreviewOpen: (open) => set({ previewOpen: open }),
       runPreview: () => set({ previewRunning: true, previewOpen: true }),
+      setEffort: (effort) => set({ effort: Math.max(0, Math.min(100, Math.round(effort))) }),
 
       createProject: (name, repoFullName) => {
         abortRun?.abort();
@@ -341,7 +344,8 @@ export const useHiveStore = create<HiveState>()(
         void releaseModelIfWorn();
       },
 
-      send: async (text, attachments) => {
+      send: async (text, attachments, requestedEffort) => {
+        const effort = Math.max(0, Math.min(100, Math.round(requestedEffort ?? get().effort)));
         const prompt = text.trim();
         if (!prompt && attachments.length === 0) return;
         const state = get();
@@ -430,6 +434,7 @@ export const useHiveStore = create<HiveState>()(
             })),
             currentHtml: project.artifact?.html ?? null,
             projectName: project.name,
+            effort,
             signal,
             // Show the model's real progress in MC's status line (a few updates a second).
             onProgress: (() => {
@@ -1068,6 +1073,7 @@ export const useHiveStore = create<HiveState>()(
           memories: s.memories,
           githubUsername: s.githubUsername,
           githubRepo: s.githubRepo,
+          effort: s.effort,
         }) as unknown as HiveState,
       onRehydrateStorage: () => () => {
         useHiveStore.setState({
