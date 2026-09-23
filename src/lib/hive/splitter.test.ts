@@ -138,7 +138,6 @@ describe("splitter-state", () => {
   });
 
   it("rotates the active Li context as the tick advances", () => {
-    const lis = [li("A", "S1", "working"), li("B", "S2", "working"), li("C", "S3", "working")];
     const shared = [
       { id: "S1", lieutenants: [] },
     ] as typeof split.splitters;

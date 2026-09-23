@@ -139,7 +139,7 @@ export function setModelEffort(effort: number): void {
   preferredEffortRung = next;
   try {
     localStorage.setItem("hive-model-effort", String(Math.max(0, Math.min(100, Math.round(effort)))));
-  } catch {}
+  } catch { /* storage can be unavailable in private/browser-restricted contexts */ }
   const desired = MODEL_LADDER[next].name;
   if (loading && status.model && status.model !== desired) void resetModel();
 }
@@ -296,7 +296,7 @@ export function markBreadcrumbClean() {
     const crumb = JSON.parse(raw) as Breadcrumb;
     crumb.clean = true;
     localStorage.setItem(CRUMB_KEY, JSON.stringify(crumb));
-  } catch {}
+  } catch { /* breadcrumb storage is optional */ }
 }
 export function takeLastBreadcrumb(): Breadcrumb | null {
   try {
@@ -446,7 +446,7 @@ async function resetModel(): Promise<void> {
     try {
       const loaded = await old;
       await Promise.race([Promise.resolve(loaded?.generator.dispose?.()), new Promise((resolve) => setTimeout(resolve, 700))]);
-    } catch {}
+    } catch { /* disposing a stale model is best-effort */ }
     await new Promise((resolve) => setTimeout(resolve, 10));
   })();
   try { await resetInFlight; } finally { resetInFlight = null; }

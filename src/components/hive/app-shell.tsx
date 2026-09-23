@@ -19,7 +19,6 @@ export function AppShell() {
   const rightCollapsed = useHiveStore((s) => s.rightCollapsed);
   const toggleLeft = useHiveStore((s) => s.toggleLeft);
   const openLeft = useHiveStore((s) => s.openLeft);
-  const toggleRight = useHiveStore((s) => s.toggleRight);
   const openRightPanel = useHiveStore((s) => s.openRight);
   const closeRight = useHiveStore((s) => s.closeRight);
   const leftOpenMobile = useHiveStore((s) => s.leftOpenMobile);

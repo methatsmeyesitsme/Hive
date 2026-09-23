@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { auditDurationMs, hasOpenAudit } from "@/lib/hive/audit-log";
-import { MAX_AGENTS_TOTAL, MAX_SPLITTERS, MODEL_CLASS } from "@/lib/hive/constants";
+import { MAX_AGENTS_TOTAL, MAX_SPLITTERS } from "@/lib/hive/constants";
 import { formatDuration } from "@/lib/hive/duration";
 import { describeModelStatus, getModelStatus, subscribeModelStatus } from "@/lib/hive/local-model";
 import { perf, perfRows } from "@/lib/hive/perf";

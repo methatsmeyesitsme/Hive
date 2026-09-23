@@ -144,7 +144,7 @@ async function monitorBackgroundJob(
   jobId: string,
   projectId: string,
   set: (fn: any) => void,
-  get: () => HiveState,
+  _get: () => HiveState,
 ): Promise<void> {
   for (let attempt = 0; attempt < 720; attempt++) {
     const job = await getBackgroundJob(jobId);

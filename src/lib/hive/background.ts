@@ -122,7 +122,7 @@ export async function cancelBackgroundJob(id: string): Promise<void> {
       },
       2000,
     );
-  } catch {}
+  } catch { /* best-effort cancellation */ }
 }
 
 export async function consumeBackgroundJob(id: string): Promise<void> {
@@ -131,5 +131,5 @@ export async function consumeBackgroundJob(id: string): Promise<void> {
       method: "DELETE",
       keepalive: true,
     });
-  } catch {}
+  } catch { /* best-effort cleanup */ }
 }
