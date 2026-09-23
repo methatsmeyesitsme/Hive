@@ -250,7 +250,7 @@ async function repairPage(data: RunInput, raw: string): Promise<string | null> {
 async function writePage(
   data: RunInput,
   brief: Brief | null,
-  parallelFindings: string[] = [],
+  agentFindings: string[] = [],
 ): Promise<McTaskResult> {
   const revisable =
     data.currentHtml && data.currentHtml.length <= MAX_REVISABLE_HTML ? data.currentHtml : null;
