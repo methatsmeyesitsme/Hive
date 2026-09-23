@@ -194,12 +194,12 @@ export function pickBackends(
   // Keep Qwen on WebGPU. On CPU-only desktops, use the smaller 360M model
   // unless the user explicitly selected a model, keeping the slow path usable.
   const wasmRung =
-    !hasWebGpu && !ios && !forcedModel
+    !hasWebGpu && !ios && !forcedModel && executionMode !== "mc"
       ? 1
       : requestedRung;
   const ladder = activeModelLadder();
   const model = ladder[Math.min(wasmRung, ladder.length - 1)];
-  const isQwen = model === MODEL_LADDER[0];
+  const isQwen = /Qwen/i.test(model.id);
   const forcedDtype = params.get("dtype");
   const dtype: LocalDtype | null =
     forcedDtype === "q4" || forcedDtype === "q4f16" || forcedDtype === "q8" ? forcedDtype : null;
