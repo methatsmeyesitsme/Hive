@@ -1,9 +1,9 @@
 /**
- * Splitter — an independent execution context for an assigned Li and its agents.
+ * Splitter — a real execution context for assigned LIs and their Agents.
  *
- * HRC decides how many logical Splitter contexts to allocate (1–5).
- * A Splitter context never claims to be a separate physical model; it maintains separate
- * conversation contexts and switches between them (context switching).
+ * HRC decides how many Splitter contexts to allocate (1–5). Each Splitter receives
+ * actual model inference calls in the swarm runner; contexts share one downloaded model
+ * session rather than duplicating model weights.
  *
  * Logical hierarchy inside one Splitter remains:
  *   Li → Agents → Li reviews → result returned to MC

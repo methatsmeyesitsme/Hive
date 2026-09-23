@@ -100,12 +100,15 @@ export function parseBrief(text: string, prompt: string): Brief {
 }
 
 export function buildPlan(build: boolean, prompt?: string): LieutenantPlan[] {
-  if (!build || (prompt && !needsAgentPass(prompt))) {
-    return [];
+  if (!build) return [];
+  if (prompt && !needsAgentPass(prompt)) {
+    return [
+      { letter: "A", objective: "Direct implementation, interaction correctness, and quality check", agentCount: 1, files: ["index.html"] },
+    ];
   }
   return [
-    { letter: "A", objective: "Requirements and implementation behavior", agentCount: 1, files: ["index.html"] },
-    { letter: "B", objective: "Visual design and responsive presentation", agentCount: 1, files: [] },
+    { letter: "A", objective: "Requirements, structure, and implementation behavior", agentCount: 1, files: ["index.html"] },
+    { letter: "B", objective: "Visual design, responsiveness, and interaction polish", agentCount: 1, files: [] },
   ];
 }
 

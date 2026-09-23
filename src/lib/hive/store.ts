@@ -802,8 +802,8 @@ export const useHiveStore = create<HiveState>()(
             fail(pre.reason);
             return;
           }
-          // HRC packs the Li onto 1-5 physical Splitters (~7B models). A Splitter
-          // role-plays several Li by keeping a separate conversation for each.
+          // HRC maps the real Li/Agent work onto 1-5 real Splitter inference contexts.
+          // Each Splitter receives the actual Li results from the real Agents.
           splitPlans = pre.splitAllocation.splitters;
           splitOf = splitterOfLi(splitPlans);
 
@@ -829,7 +829,7 @@ export const useHiveStore = create<HiveState>()(
             splitters: splitPlans.map((sp) => ({
               id: sp.id,
               status: "summoning" as const,
-              activity: "Loading 7B model",
+              activity: "Starting real Splitter context",
               lieutenants: [],
             })),
             audits: logAudits(get().audits, [
@@ -850,8 +850,9 @@ export const useHiveStore = create<HiveState>()(
             splitterId: splitOf.get(li.letter),
           }));
 
-          // Agents are logical/virtual. Keep ownership in a private map so the
-          // browser never has to render or react to hundreds of AgentState objects.
+          // Each Agent listed here corresponds to an actual model inference context.
+          // Keep ownership private so the browser does not render hundreds of full
+          // AgentState objects at once.
           const logicalAgentsByLi = new Map(
             splitPlans.flatMap((sp) => sp.lieutenants.map((l) => [l.letter, l] as const)),
           );
@@ -887,7 +888,7 @@ export const useHiveStore = create<HiveState>()(
               hrc: `Managing ${agentTotal} agent contexts`,
             },
             audits: logAudits(get().audits, [
-              audit("HRC", `Summoned ${summoned.length} Li and initialized ${agentTotal} logical agents`),
+              audit("HRC", `Started ${summoned.length} Li and ${agentTotal} real Agent contexts`),
             ]),
           });
           syncSplitters();

@@ -26,7 +26,7 @@ function splitterActivity(status: SplitterState["status"], lis: LieutenantState[
   switch (status) {
     case "summoning":
       return lis.length === 0
-        ? `Loading ${MODEL_CLASS.splitter} model`
+        ? "Starting real Splitter model context"
         : `Starting ${lis.length} Li context${lis.length === 1 ? "" : "s"}`;
     case "working": {
       // Show the assigned Li context and its actual agent count.

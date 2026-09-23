@@ -72,12 +72,12 @@ export type LieutenantState = {
   splitterId?: string;
 };
 
-/** One logical Splitter context managed by HRC; browser inference currently uses one physical local model session. */
+/** One real Splitter inference context managed by HRC; contexts share one downloaded local model session. */
 export type SplitterState = {
   id: string; // S1 … S5
   status: "summoning" | "working" | "reviewing" | "done" | "failed";
   activity: string;
-  /** Logical LIs this Splitter is currently role-playing */
+  /** Real LIs this Splitter is currently coordinating */
   lieutenants: LieutenantState[];
 };
 
