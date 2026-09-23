@@ -19,6 +19,7 @@ import {
   getModelStatus,
   releaseModelIfWorn,
   setModelEffort,
+  setModelExecutionMode,
   subscribeModelStatus,
   type ModelStatus,
 } from "./local-model";
@@ -307,7 +308,19 @@ export const useHiveStore = create<HiveState>()(
       setPreviewOpen: (open) => set({ previewOpen: open }),
       runPreview: () => set({ previewRunning: true, previewOpen: true }),
       setEffort: (effort) => set({ effort: Math.max(0, Math.min(100, Math.round(effort))) }),
-      setExecutionMode: (mode) => set({ executionMode: mode }),
+      setExecutionMode: (mode) => {
+        setModelExecutionMode(mode);
+        set({
+          executionMode: mode,
+          phase: "idle",
+          status: idleStatus,
+          lieutenants: [],
+          splitters: [],
+          agentTotal: 0,
+          fileLocks: [],
+          pauseReason: null,
+        });
+      },
 
       resumeBackgroundJobs: async () => {
         const jobs = await listBackgroundJobs();
@@ -432,6 +445,7 @@ export const useHiveStore = create<HiveState>()(
       send: async (text, attachments, requestedEffort) => {
         const effort = Math.max(0, Math.min(100, Math.round(requestedEffort ?? get().effort)));
         const executionMode = get().executionMode;
+        setModelExecutionMode(executionMode);
         setModelEffort(effort);
         const prompt = text.trim();
         if (!prompt && attachments.length === 0) return;
