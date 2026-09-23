@@ -45,6 +45,20 @@ export type BackgroundJob = {
 
 const URL = "/api/hive/background";
 
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 2500,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 export async function enqueueBackgroundJob(input: BackgroundInput): Promise<
   | { ok: true; jobId: string }
   | { ok: false; unavailable: boolean; error?: string }
@@ -54,7 +68,7 @@ export async function enqueueBackgroundJob(input: BackgroundInput): Promise<
       ...input,
       currentHtml: input.currentHtml ? input.currentHtml.slice(0, 16000) : null,
     };
-    const res = await fetch(URL, {
+    const res = await fetchWithTimeout(URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(compact),
@@ -76,7 +90,7 @@ export async function enqueueBackgroundJob(input: BackgroundInput): Promise<
 
 export async function getBackgroundJob(id: string): Promise<BackgroundJob | null> {
   try {
-    const res = await fetch(`${URL}?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    const res = await fetchWithTimeout(`${URL}?id=${encodeURIComponent(id)}`, { cache: "no-store" });
     if (!res.ok) return null;
     return (await res.json()) as BackgroundJob;
   } catch {
@@ -86,13 +100,28 @@ export async function getBackgroundJob(id: string): Promise<BackgroundJob | null
 
 export async function listBackgroundJobs(): Promise<BackgroundJob[]> {
   try {
-    const res = await fetch(URL, { cache: "no-store" });
+    const res = await fetchWithTimeout(URL, { cache: "no-store" });
     if (!res.ok) return [];
     const body = (await res.json()) as { jobs?: BackgroundJob[] };
     return body.jobs ?? [];
   } catch {
     return [];
   }
+}
+
+export async function cancelBackgroundJob(id: string): Promise<void> {
+  try {
+    await fetchWithTimeout(
+      URL,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel", id }),
+        keepalive: true,
+      },
+      2000,
+    );
+  } catch {}
 }
 
 export async function consumeBackgroundJob(id: string): Promise<void> {

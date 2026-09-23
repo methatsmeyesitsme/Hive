@@ -15,8 +15,8 @@ const plans = (n: number, agents = 3): LieutenantPlan[] =>
   }));
 
 describe("allocateSplitters", () => {
-  it("uses one Splitter for one or two Li, more as the work grows", () => {
-    for (const [li, expected] of [[1, 1], [2, 1], [3, 2], [5, 3], [10, 5]] as const) {
+  it("gives each active Li its own Splitter until the five-context cap", () => {
+    for (const [li, expected] of [[1, 1], [2, 2], [3, 3], [5, 5], [10, 5]] as const) {
       const r = allocateSplitters(plans(li));
       assert.ok(r.ok);
       assert.equal(r.splitters.length, expected, `${li} Li`);
@@ -114,38 +114,38 @@ describe("splitter-state", () => {
     assert.equal(m.size, 3);
     assert.equal(m.get("A"), "S1");
     assert.equal(m.get("B"), "S2");
-    assert.equal(m.get("C"), "S1");
+    assert.equal(m.get("C"), "S3");
   });
 
   it("a Splitter with no Li yet is summoning (loading its model)", () => {
     const s = buildSplitterStates(split.splitters, []);
     assert.deepEqual(s.map((x) => x.status), ["summoning", "summoning"]);
-    assert.match(s[0].activity, /Loading 7B model/);
+    assert.match(s[0].activity, /Loading 0.5B model/);
   });
 
   it("derives working / reviewing / done from its Li", () => {
-    const working = buildSplitterStates(split.splitters, [li("A", "S1", "working"), li("C", "S1", "working"), li("B", "S2", "working")]);
+    const working = buildSplitterStates(split.splitters, [li("A", "S1", "working"), li("B", "S2", "working"), li("C", "S3", "working")]);
     assert.equal(working[0].status, "working");
-    assert.match(working[0].activity, /Switching to Li [AC] · 2 Li · 6 agents/);
+    assert.match(working[0].activity, /Running Li A · 3 agents/);
     assert.match(working[1].activity, /Running Li B · 3 agents/);
 
-    const reviewing = buildSplitterStates(split.splitters, [li("A", "S1", "reviewing"), li("C", "S1", "reviewing"), li("B", "S2", "reviewing")]);
-    assert.deepEqual(reviewing.map((x) => x.status), ["reviewing", "reviewing"]);
+    const reviewing = buildSplitterStates(split.splitters, [li("A", "S1", "reviewing"), li("B", "S2", "reviewing"), li("C", "S3", "reviewing")]);
+    assert.deepEqual(reviewing.map((x) => x.status), ["reviewing", "reviewing", "reviewing"]);
 
-    const done = buildSplitterStates(split.splitters, [li("A", "S1", "done"), li("C", "S1", "done"), li("B", "S2", "done")]);
-    assert.deepEqual(done.map((x) => x.status), ["done", "done"]);
-    assert.equal(done[0].activity, "Results returned to MC");
+    const done = buildSplitterStates(split.splitters, [li("A", "S1", "done"), li("B", "S2", "done"), li("C", "S3", "done")]);
+    assert.deepEqual(done.map((x) => x.status), ["done", "done", "done"]);
+    assert.equal(done[2].activity, "Results returned to MC");
   });
 
   it("rotates the active Li context as the tick advances", () => {
-    const lis = [li("A", "S1", "working"), li("C", "S1", "working"), li("B", "S2", "working")];
+    const lis = [li("A", "S1", "working"), li("B", "S2", "working"), li("C", "S3", "working")];
     const a = buildSplitterStates(split.splitters, lis, 0)[0].activity;
     const b = buildSplitterStates(split.splitters, lis, 1)[0].activity;
     assert.notEqual(a, b);
   });
 
   it("lists Splitter ids for status text", () => {
-    assert.equal(listSplitterIds(split.splitters), "S1 and S2");
+    assert.equal(listSplitterIds(split.splitters), "S1, S2 and S3");
     const one = allocateSplitters(plans(1));
     assert.ok(one.ok);
     assert.equal(listSplitterIds(one.splitters), "S1");

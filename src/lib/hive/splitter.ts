@@ -1,5 +1,5 @@
 /**
- * Splitter — a logical execution context that role-plays multiple LIs + Agents.
+ * Splitter — an independent execution context for an assigned Li and its agents.
  *
  * HRC decides how many logical Splitter contexts to allocate (1–5).
  * A Splitter context never claims to be a separate physical model; it maintains separate
@@ -106,11 +106,11 @@ export function allocateSplitters(requested: LieutenantPlan[]): SplitAllocation 
     });
   }
 
-  // Decide how many logical Splitter contexts to use (1–MAX_SPLITTERS).
-  // Prefer fewer stronger workers when the job is small.
+  // Keep each active Li on its own Splitter so the visible contexts map cleanly to
+  // the independent agent work Hive actually executes.
   const splitterCount = Math.min(
     MAX_SPLITTERS,
-    Math.max(1, Math.ceil(normalized.length / 2)),
+    Math.max(1, normalized.length),
   );
 
   // Round-robin pack LIs into Splitters.

@@ -1,0 +1,71 @@
+name: Hive Deep Test
+
+on:
+  push:
+    branches: ["main", "hive-deep-test"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Auth invariant
+        run: npm run check:auth
+
+      - name: Unit and integration tests
+        run: npm run test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Server bundle build
+        run: npm run build:dev
+
+      - name: Static build
+        run: npm run build:static
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Prepare browser smoke output
+        run: |
+          sudo mkdir -p /workspace
+          sudo chown "$USER":"$USER" /workspace
+
+      - name: Start dev server
+        shell: bash
+        run: |
+          nohup npm run dev >/tmp/hive-dev.log 2>&1 &
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8080/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/hive-dev.log
+          exit 1
+
+      - name: Browser smoke test
+        run: node scripts/browser-smoke.mjs http://127.0.0.1:8080/ /workspace/hive-smoke.png
+
+      - name: Preview runtime smoke test
+        run: node scripts/preview-smoke.mjs

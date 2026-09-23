@@ -126,12 +126,11 @@ export function localModelSupported(): boolean {
 }
 
 const MODEL_ALIASES: Record<string, number> = { qwen: 0, "360m": 1, "135m": 2 };
-let preferredEffortRung = 1;
-
+let preferredEffortRung = 0;
 function effortToRung(effort: number): number {
   const n = Math.max(0, Math.min(100, effort));
-  if (n <= 30) return 2;
-  if (n <= 70) return 1;
+  if (n <= 10) return 2;
+  if (n <= 30) return 1;
   return 0;
 }
 

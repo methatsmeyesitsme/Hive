@@ -172,8 +172,8 @@ describe("keeping the model warm between projects", () => {
     const m = await fresh("worn");
     await m.generateChat(msgs, { maxNewTokens: 5 });
     assert.equal(await m.releaseModelIfWorn(), false, "one run: keep the session");
-    for (let i = 0; i < 3; i++) await m.generateChat(msgs, { maxNewTokens: 5 });
-    assert.equal(await m.releaseModelIfWorn(), true, "four runs: recycle it");
+    for (let i = 0; i < 63; i++) await m.generateChat(msgs, { maxNewTokens: 5 });
+    assert.equal(await m.releaseModelIfWorn(), true, "sixty-four runs: recycle it");
     await m.generateChat(msgs, { maxNewTokens: 5 });
     assert.equal(attempts.length, 2, "loaded once, recycled, loaded again");
   });

@@ -10,6 +10,7 @@ import {
   parseBrief,
   polishHtml,
   repairHtml,
+  needsWebResearch,
 } from "./mc-parse.ts";
 
 describe("parseBrief", () => {
@@ -39,6 +40,14 @@ describe("parseBrief", () => {
 
   it("does not treat a plain question as a build when BUILD is missing", () => {
     assert.equal(parseBrief("", "hello there").build, false);
+  });
+});
+
+describe("buildPlan", () => {
+  it("uses real agent counts for builds and no phantom agents for direct answers", () => {
+    const build = buildPlan(true);
+    assert.deepEqual(build.map((p) => p.agentCount), [1, 1]);
+    assert.equal(buildPlan(false).length, 0);
   });
 });
 
@@ -105,6 +114,18 @@ describe("isUsablePage / pageTitle", () => {
   it("reads the title", () => {
     assert.equal(pageTitle("<title> Clay Studio </title>", "x"), "Clay Studio");
     assert.equal(pageTitle("<p>no title</p>", "x"), "x");
+  });
+});
+
+describe("needsWebResearch", () => {
+  it("detects explicit current web research requests", () => {
+    assert.equal(needsWebResearch("search the web for the latest Bambu Studio version"), true);
+    assert.equal(needsWebResearch("research this online and summarize it"), true);
+    assert.equal(needsWebResearch("what is new today in web browsers?"), true);
+  });
+
+  it("does not send a normal current-time app request to web search", () => {
+    assert.equal(needsWebResearch("make an app that shows the current time"), false);
   });
 });
 

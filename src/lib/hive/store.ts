@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { getAiStatus, runMcTask } from "./mc";
-import { consumeBackgroundJob, enqueueBackgroundJob, getBackgroundJob, listBackgroundJobs, type BackgroundInput } from "./background";
+import { cancelBackgroundJob, consumeBackgroundJob, enqueueBackgroundJob, getBackgroundJob, listBackgroundJobs, type BackgroundInput } from "./background";
 import {
   connectGithub,
   createGithubRepo,
@@ -10,7 +10,8 @@ import {
   pushToGithub,
 } from "../github/api";
 import { STORAGE_KEY } from "./constants";
-import { acquireLock, estimateSwarm, hrcAllocate } from "./limits";
+import { acquireLock, hrcAllocate } from "./limits";
+import { buildPlan, looksLikeBuild } from "./mc-parse";
 import type { SplitterPlan } from "./splitter";
 import { perf } from "./perf";
 import {
@@ -274,6 +275,7 @@ export const useHiveStore = create<HiveState>()(
       logout: () => {
         abortRun?.abort();
         abortRun = null;
+        for (const jobId of Object.values(get().backgroundJobs)) void cancelBackgroundJob(jobId);
         set({
           audits: closeOpenAudits(get().audits),
           sessionName: null,
@@ -310,8 +312,21 @@ export const useHiveStore = create<HiveState>()(
             if (!project) continue;
             const result = job.result;
             const mcMsg: ChatMessage = { id: nid("msg"), role: "mc", content: result.mcMessage, createdAt: Date.now(), hasArtifact: Boolean(result.artifact) };
-            set((s) => ({ projects: s.projects.map((p) => p.id === job.projectId ? { ...p, name: p.name === "New Project" ? result.projectName.slice(0, 48) : p.name, messages: [...p.messages, mcMsg], artifact: result.artifact, updatedAt: Date.now() } : p), backgroundJobs: Object.fromEntries(Object.entries(s.backgroundJobs).filter(([, id]) => id !== job.id)), phase: "complete", status: idleStatus }));
+            set((s) => ({ projects: s.projects.map((p) => p.id === job.projectId ? { ...p, name: p.name === "New Project" || p.name === "Untitled project" ? result.projectName.slice(0, 48) : p.name, messages: [...p.messages, mcMsg], artifact: result.artifact, updatedAt: Date.now() } : p), backgroundJobs: Object.fromEntries(Object.entries(s.backgroundJobs).filter(([, id]) => id !== job.id)), phase: "complete", status: idleStatus }));
             await consumeBackgroundJob(job.id);
+          } else if (job.status === "cancelled") {
+            await consumeBackgroundJob(job.id);
+            set((s) => ({
+              backgroundJobs: Object.fromEntries(
+                Object.entries(s.backgroundJobs).filter(([, id]) => id !== job.id),
+              ),
+              ...(get().activeProjectId === job.projectId
+                ? {
+                    phase: "cancelled" as const,
+                    status: { mc: "Background run cancelled", hrc: "Standing by", ro: "Standing by" },
+                  }
+                : {}),
+            }));
           } else if (job.status === "queued" || job.status === "running") {
             set({ backgroundJobs: { ...get().backgroundJobs, [job.projectId]: job.id }, phase: "working", status: { mc: "Background Hive is working", hrc: "Server worker running", ro: "Standing by" } });
             void monitorBackgroundJob(job.id, job.projectId, set, get);
@@ -518,7 +533,7 @@ export const useHiveStore = create<HiveState>()(
           return;
         }
 
-        const provisional = estimateSwarm(prompt);
+        const provisional = looksLikeBuild(prompt) ? buildPlan(true) : buildPlan(false);
         set({
           status: {
             mc: "Planning the requested changes",
@@ -553,7 +568,11 @@ export const useHiveStore = create<HiveState>()(
                 const now = perf.now();
                 if (now - last < 250 || get().runId !== runId) return;
                 last = now;
-                set({ status: { ...get().status, mc: `Writing the ${label}… ${tokens} tokens` } });
+                if (label.startsWith("RO ")) {
+                  set({ status: { ...get().status, ro: `${label}…` } });
+                } else {
+                  set({ status: { ...get().status, mc: `Writing the ${label}… ${tokens} tokens` } });
+                }
               };
             })(),
           },
@@ -987,6 +1006,8 @@ export const useHiveStore = create<HiveState>()(
         abortRun = null;
         lockMap.clear();
         const project = get().activeProject();
+        const bgJobId = project ? get().backgroundJobs[project.id] : undefined;
+        if (bgJobId) void cancelBackgroundJob(bgJobId);
         const why = reason?.trim() || "you stopped the run";
         if (project) {
           const msg: ChatMessage = {
@@ -1002,23 +1023,29 @@ export const useHiveStore = create<HiveState>()(
             ),
           }));
         }
-        set({
+        set((s) => ({
           phase: "cancelled",
           status: {
             mc: "Acknowledged cancellation",
             hrc: "Stopped further swarm deployment",
             ro: "Standing by",
           },
+          backgroundJobs: project
+            ? Object.fromEntries(
+                Object.entries(s.backgroundJobs).filter(([projectId]) => projectId !== project.id),
+              )
+            : s.backgroundJobs,
           agentTotal: 0,
           fileLocks: [],
           previewRunning: false,
           audits: logAudits(get().audits, [audit("MC", `Run cancelled: ${why}`)], "final"),
-        });
+        }));
       },
 
       freeze: () => {
         abortRun?.abort();
         abortRun = null;
+        for (const jobId of Object.values(get().backgroundJobs)) void cancelBackgroundJob(jobId);
         lockMap.clear();
         set({
           frozen: true,

@@ -105,7 +105,7 @@ export function StatusPanel({
             <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-dim">
               Splitters
               <span className="ml-2 normal-case tracking-normal text-dim/80">
-                {splitters.length}/{MAX_SPLITTERS} independent agents
+                {splitters.length}/{MAX_SPLITTERS} active contexts
               </span>
             </p>
             {splitters.length === 0 ? (
@@ -236,7 +236,7 @@ export function StatusPanel({
               <span className="text-sm text-dim"> / {MAX_AGENTS_TOTAL}</span>
             </p>
             <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-dim">
-              Agents active
+              Actual agent runs active
             </p>
           </div>
           <Button

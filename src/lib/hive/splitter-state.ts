@@ -2,14 +2,14 @@ import { MODEL_CLASS } from "./constants.ts";
 import type { SplitterPlan } from "./splitter.ts";
 import type { LieutenantState, SplitterState } from "./types.ts";
 
-/** Li letter -> the Splitter that role-plays it. */
+/** Li letter -> the independent Splitter context assigned to it. */
 export function splitterOfLi(plans: SplitterPlan[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const sp of plans) for (const li of sp.lieutenants) map.set(li.letter, sp.id);
   return map;
 }
 
-/** Status of one Splitter, derived from the Li it is role-playing. */
+/** Status of one Splitter, derived from the Li assigned to that context. */
 function splitterStatus(lis: LieutenantState[]): SplitterState["status"] {
   if (lis.length === 0) return "summoning";
   if (lis.some((l) => l.status === "failed")) return "failed";
@@ -29,7 +29,7 @@ function splitterActivity(status: SplitterState["status"], lis: LieutenantState[
         ? `Loading ${MODEL_CLASS.splitter} model`
         : `Starting ${lis.length} Li context${lis.length === 1 ? "" : "s"}`;
     case "working": {
-      // One model, several conversations: show which Li context is active right now.
+      // Show the assigned Li context and its actual agent count.
       const current = lis[Math.abs(tick) % lis.length];
       return lis.length === 1
         ? `Running Li ${current.letter} · ${agents} agents`
@@ -45,8 +45,8 @@ function splitterActivity(status: SplitterState["status"], lis: LieutenantState[
 }
 
 /**
- * The Splitter view of a run: one entry per physical ~7B model, with the Li it is
- * currently role-playing. `tick` advances during work so the active context rotates.
+ * The Splitter view of a run: one entry per active 0.5B inference context. `tick`
+ * advances during work so the displayed activity remains alive while inference runs.
  */
 export function buildSplitterStates(
   plans: SplitterPlan[],

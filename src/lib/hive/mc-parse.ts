@@ -40,6 +40,13 @@ const APP_WORDS =
 const SITE_WORDS =
   /\b(landing|website|web ?site|homepage|home page|portfolio|blog|store|shop|restaurant|agency|studio|company|business|newsletter)\b/i;
 
+const WEB_RESEARCH_WORDS =
+  /\b(search (?:the )?(?:web|internet|online)|web search|search online|look up online|research online|research (?:this|that|the latest)|latest news|latest updates|what(?:'s| is) new|today(?:'s|s)|current (?:news|status|version|price|events?|information)|right now)\b/i;
+
+export function needsWebResearch(prompt: string): boolean {
+  return WEB_RESEARCH_WORDS.test(prompt);
+}
+
 /**
  * Is the request for a small working app (a clock, a calculator, a game) rather than a
  * page to read? Apps need a different prompt: the page has to have working JavaScript,
@@ -83,12 +90,11 @@ export function parseBrief(text: string, prompt: string): Brief {
 
 export function buildPlan(build: boolean): LieutenantPlan[] {
   if (!build) {
-    return [{ letter: "A", objective: "Answer the request", agentCount: 2, files: [] }];
+    return [];
   }
   return [
-    { letter: "A", objective: "Page structure and semantic HTML", agentCount: 3, files: ["index.html"] },
-    { letter: "B", objective: "Visual design and responsive CSS", agentCount: 3, files: [] },
-    { letter: "C", objective: "Copy and content", agentCount: 2, files: [] },
+    { letter: "A", objective: "Requirements and implementation behavior", agentCount: 1, files: ["index.html"] },
+    { letter: "B", objective: "Visual design and responsive presentation", agentCount: 1, files: [] },
   ];
 }
 
