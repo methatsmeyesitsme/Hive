@@ -406,7 +406,7 @@ export function isRuntimeFailure(err: unknown): boolean {
   if (isAbortError(err)) return true;
   if (isMemoryFailure(err)) return true;
   const message = err instanceof Error ? err.message : String(err);
-  return /OrtRun|onnxruntime|buffer_manager|webgpu|GPUDevice|device (was )?lost|Aborted\\(/i.test(message);
+  return /OrtRun|onnxruntime|buffer_manager|webgpu|GPUDevice|device (was )?lost|Aborted\(/i.test(message);
 }
 export class GenerationCancelled extends Error {
   constructor() { super("Generation cancelled"); this.name = "GenerationCancelled"; }
