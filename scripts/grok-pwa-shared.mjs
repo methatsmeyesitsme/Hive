@@ -254,6 +254,7 @@ export function readOgSite(cwd = process.cwd()) {
 
 /** Public path of an on-disk share card, or "" if neither file exists. */
 export function ogCardPublicPath(cwd = process.cwd()) {
+  if (!cwd) return "";
   if (existsSync(join(cwd, "public/og.jpg"))) return "/og.jpg";
   if (existsSync(join(cwd, "public/og.png"))) return "/og.png";
   return "";
@@ -402,7 +403,7 @@ function insertBeforeHeadClose(html, snippet) {
 
 export function normalizeHeadContext(ctx = {}) {
   const hasExplicitCwd = Object.prototype.hasOwnProperty.call(ctx, "cwd");
-  const cwd = ctx.cwd ?? process.cwd();
+  const cwd = hasExplicitCwd ? String(ctx.cwd ?? process.cwd()) : "";
   // Only a caller that explicitly supplies a workspace should have filesystem
   // state influence head identity. This keeps direct injector calls isolated
   // from the host app's own site.json/og.jpg, while Vite/Nitro callers can pass
