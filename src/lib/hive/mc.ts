@@ -21,6 +21,7 @@ import {
   needsAgentPass,
 } from "./mc-parse";
 import { perf } from "./perf";
+import { hrcAllocate } from "./limits";
 import { searchWeb, type WebSearchResult } from "./web-search";
 import type { Artifact, ExecutionMode, McTaskResult } from "./types";
 
@@ -253,58 +254,184 @@ function pageBudget(device: "webgpu" | "wasm", app = false, effort = 50): number
 }
 
 async function runRealAgents(data: RunInput, app: boolean, webResults: WebSearchResult[] = []): Promise<string[]> {
-  // MC Only deliberately skips the independent-agent pass. Tiny builds also stay on
-  // MC's fast path even in the normal swarm mode.
-  if (data.executionMode === "mc" || !needsAgentPass(data.prompt)) {
-    data.onProgress?.({ label: "simple build; MC working directly", tokens: 0 });
-    return [];
-  }
+  if (data.executionMode === "mc") return [];
 
-  const assignments = [
-    {
-      splitter: "S1",
-      text: app
-        ? "Determine the exact interaction logic, state changes, and edge cases required."
-        : "Extract the essential content, semantics, behavior, and requirements required.",
-    },
-    {
-      splitter: "S2",
-      text: "Determine a distinctive visual system, responsive behavior, and compact styling direction.",
-    },
-  ];
+  const requested = buildPlan(true, data.prompt);
+  const allocated = hrcAllocate(requested);
+  if (!allocated.ok) throw new Error(allocated.reason);
 
-  const requests = assignments.map((a) => ({
-    messages: [
-      {
-        role: "system" as const,
-        content: `You are an independent Hive agent in ${a.splitter}. You have your own context. Do only this assignment. Do not write a full page. Return 2 to 4 concise implementation bullets. ${a.text}`,
-      },
-      {
-        role: "user" as const,
-        content: [`Project: ${data.projectName}`, `Human request: ${data.prompt}`, webContext(webResults)].filter(Boolean).join("\n\n"),
-      },
-    ],
-  }));
+  const splitters = allocated.splitAllocation.splitters;
+  const web = webContext(webResults);
+
+  type Assignment = {
+    splitterId: string;
+    liLetter: string;
+    agentId: string;
+    assignment: string;
+    ownedFiles: string[];
+  };
+  type AgentResult = Assignment & { output: string };
+
+  const assignments: Assignment[] = splitters.flatMap((splitter) =>
+    splitter.lieutenants.flatMap((li) =>
+      li.agents.map((agent) => ({
+        splitterId: splitter.id,
+        liLetter: li.letter,
+        agentId: agent.id,
+        assignment: agent.assignment,
+        ownedFiles: agent.ownedFiles,
+      })),
+    ),
+  );
 
   data.onProgress?.({
-    label: `${assignments.map((a) => `${a.splitter} actual agent`).join(" + ")} working independently`,
+    label:
+      "HRC activated " + splitters.length + " real Splitter context" +
+      (splitters.length === 1 ? "" : "s") + " and " +
+      assignments.length + " real agent" + (assignments.length === 1 ? "" : "s"),
     tokens: 0,
   });
-  try {
-    const outputs = await generateChatParallel(requests, {
-      maxNewTokens: Math.max(24, Math.round(24 + data.effort * 0.18)),
-      label: "independent agents",
-      signal: data.signal,
+
+  const agentResults: AgentResult[] = [];
+  for (let i = 0; i < assignments.length; i += 4) {
+    const group = assignments.slice(i, i + 4);
+    const outputs = await generateChatParallel(
+      group.map((item) => ({
+        messages: [
+          {
+            role: "system" as const,
+            content: [
+              "You are real Agent " + item.agentId + " inside Splitter " + item.splitterId + ", reporting to Lieutenant " + item.liLetter + ".",
+              "Exact assignment: " + item.assignment,
+              "Owned files: " + (item.ownedFiles.join(", ") || "(none assigned)") + ".",
+              "Work independently. Return concrete implementation work for your Li.",
+              "Give exact file-specific changes, logic, code decisions, edge cases, or fixes.",
+              "Do not act as MC, HRC, RO, another Li, another Agent, or a Splitter.",
+              "Do not browse the web or access GitHub.",
+              web,
+            ].filter(Boolean).join("\n\n"),
+          },
+          {
+            role: "user" as const,
+            content: "Project: " + data.projectName + "\nHuman request: " + data.prompt,
+          },
+        ] satisfies LocalChatMessage[],
+      })),
+      {
+        maxNewTokens: Math.max(72, Math.round(72 + data.effort * 0.32)),
+        label: "real agents",
+        signal: data.signal,
+      },
+    );
+
+    outputs.forEach((output, offset) => {
+      const item = group[offset];
+      agentResults.push({ ...item, output: output.text });
+      data.onProgress?.({ label: "Agent " + item.agentId + " completed real work", tokens: 0 });
     });
-    data.onProgress?.({
-      label: `${assignments.map((a) => `${a.splitter} actual agent`).join(" + ")} completed`,
-      tokens: outputs.length,
-    });
-    return outputs.map((o) => o.text);
-  } catch {
-    data.onProgress?.({ label: "Independent agent pass recovered; MC is continuing", tokens: 0 });
-    return [];
   }
+
+  const agentsByLi = new Map<string, AgentResult[]>();
+  for (const result of agentResults) {
+    const key = result.splitterId + ":" + result.liLetter;
+    const list = agentsByLi.get(key) ?? [];
+    list.push(result);
+    agentsByLi.set(key, list);
+  }
+
+  const liReports: Array<{ splitterId: string; liLetter: string; report: string }> = [];
+  for (const splitter of splitters) {
+    for (const li of splitter.lieutenants) {
+      const agents = agentsByLi.get(splitter.id + ":" + li.letter) ?? [];
+      const source = agents
+        .map((agent) => "Agent " + agent.agentId + " work:\n" + agent.output.slice(0, 1800))
+        .join("\n\n");
+
+      const out = await generateChat(
+        [
+          {
+            role: "system",
+            content: [
+              "You are real Lieutenant " + li.letter + " inside Splitter " + splitter.id + ".",
+              "Objective: " + li.objective,
+              "You have " + agents.length + " real Agent report" + (agents.length === 1 ? "" : "s") + ".",
+              "Review the Agents' work, resolve conflicts, verify completeness, and compile one actionable implementation report for your Splitter.",
+              "Do not claim to be MC, HRC, RO, or an Agent. Do not browse or access GitHub.",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: [
+              "Project: " + data.projectName,
+              "Human request: " + data.prompt,
+              web,
+              source || "No Agent report was returned.",
+            ].filter(Boolean).join("\n\n"),
+          },
+        ],
+        {
+          maxNewTokens: Math.max(96, Math.round(96 + data.effort * 0.35)),
+          temperature: 0.25,
+          label: "Li " + li.letter,
+          signal: data.signal,
+        },
+      );
+
+      liReports.push({ splitterId: splitter.id, liLetter: li.letter, report: out.text });
+      data.onProgress?.({ label: "Li " + li.letter + " completed real compilation", tokens: 0 });
+    }
+  }
+
+  const reportsBySplitter = new Map<string, typeof liReports>();
+  for (const report of liReports) {
+    const list = reportsBySplitter.get(report.splitterId) ?? [];
+    list.push(report);
+    reportsBySplitter.set(report.splitterId, list);
+  }
+
+  const splitterReports: string[] = [];
+  for (const splitter of splitters) {
+    const reports = reportsBySplitter.get(splitter.id) ?? [];
+    const source = reports
+      .map((report) => "Li " + report.liLetter + " report:\n" + report.report.slice(0, 2200))
+      .join("\n\n");
+
+    const out = await generateChat(
+      [
+        {
+          role: "system",
+          content: [
+            "You are real Splitter " + splitter.id + ".",
+            "Coordinate " + reports.length + " independent Li context" + (reports.length === 1 ? "" : "s") + ".",
+            "Reconcile their reports into one technically coherent implementation package for MC.",
+            "Preserve useful work, resolve contradictions, and identify integration requirements.",
+            "Do not claim to be MC, HRC, RO, a Li, or an Agent. Do not browse or access GitHub.",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: [
+            "Project: " + data.projectName,
+            "Human request: " + data.prompt,
+            web,
+            source || "No Li report was returned.",
+          ].filter(Boolean).join("\n\n"),
+        },
+      ],
+      {
+        maxNewTokens: Math.max(120, Math.round(120 + data.effort * 0.38)),
+        temperature: 0.2,
+        label: splitter.id,
+        signal: data.signal,
+      },
+    );
+
+    splitterReports.push("Splitter " + splitter.id + " compiled swarm work:\n" + out.text);
+    data.onProgress?.({ label: splitter.id + " completed real compilation", tokens: 0 });
+  }
+
+  data.onProgress?.({ label: "All real Splitters returned compiled work to MC", tokens: 0 });
+  return splitterReports;
 }
 
 type Brief = ReturnType<typeof parseBrief>;
