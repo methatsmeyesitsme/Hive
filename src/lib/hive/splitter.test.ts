@@ -119,7 +119,7 @@ describe("splitter-state", () => {
 
   it("a Splitter with no Li yet is summoning (loading its model)", () => {
     const s = buildSplitterStates(split.splitters, []);
-    assert.deepEqual(s.map((x) => x.status), ["summoning", "summoning"]);
+    assert.deepEqual(s.map((x) => x.status), ["summoning", "summoning", "summoning"]);
     assert.match(s[0].activity, /Loading 0.5B model/);
   });
 
@@ -139,8 +139,12 @@ describe("splitter-state", () => {
 
   it("rotates the active Li context as the tick advances", () => {
     const lis = [li("A", "S1", "working"), li("B", "S2", "working"), li("C", "S3", "working")];
-    const a = buildSplitterStates(split.splitters, lis, 0)[0].activity;
-    const b = buildSplitterStates(split.splitters, lis, 1)[0].activity;
+    const shared = [
+      { id: "S1", lieutenants: [] },
+    ] as typeof split.splitters;
+    const lisForOne = [li("A", "S1", "working"), li("B", "S1", "working")];
+    const a = buildSplitterStates(shared, lisForOne, 0)[0].activity;
+    const b = buildSplitterStates(shared, lisForOne, 1)[0].activity;
     assert.notEqual(a, b);
   });
 

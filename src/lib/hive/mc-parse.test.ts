@@ -56,7 +56,7 @@ describe("buildPlan", () => {
     const plan = buildPlan(true);
     assert.ok(plan.length <= 26);
     assert.equal(new Set(plan.map((p) => p.objective)).size, plan.length);
-    assert.equal(buildPlan(false).length, 1);
+    assert.equal(buildPlan(false).length, 0);
   });
 });
 

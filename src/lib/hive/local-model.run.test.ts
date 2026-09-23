@@ -47,8 +47,12 @@ const PAGE = "<!doctype html> <html> <body> hello </body> </html> and then a lot
         const words = PAGE.split(" ");
         let out = "";
         for (let i = 0; i < Math.min(words.length, opts.max_new_tokens); i++) {
-          await sleep(4);
-          out += (i === 0 ? "" : " ") + words[i];
+          await sleep(slowTokens > 0 ? 4 : 0);
+          const chunk = (i === 0 ? "" : " ") + words[i];
+          out += chunk;
+          opts.streamer?.callback_function?.(chunk);
+          opts.streamer?.token_callback_function?.();
+          if (opts.stopping_criteria?.interrupted) break;
         }
         results.push({ generated_text: [...chat, { role: "assistant", content: out }] });
       }

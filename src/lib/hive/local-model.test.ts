@@ -44,8 +44,11 @@ describe("pickBackends", () => {
       { device: "wasm", dtype: "q4", model: QWEN },
     ]);
   });
-  it("uses the CPU only when there is no WebGPU, trying the 512 MB file before the 786 MB one", () => {
+  it("uses the fast SmolLM2-360M path on a CPU-only desktop", () => {
     assert.deepEqual(pickBackends("", false, false), [
+      { device: "wasm", dtype: "q4", model: SMOL360 },
+    ]);
+    assert.deepEqual(pickBackends("?model=qwen", false, false), [
       { device: "wasm", dtype: "q8", model: QWEN },
       { device: "wasm", dtype: "q4", model: QWEN },
     ]);
@@ -56,16 +59,11 @@ describe("pickBackends", () => {
       { device: "wasm", dtype: "q4", model: QWEN },
     ]);
   });
-  it("only ever picks Qwen files unless the address asks for another model", () => {
-    const cases: [boolean, boolean, boolean][] = [
-      [true, false, true],
-      [true, false, false],
-      [false, false, false],
-      [true, true, false],
-    ];
-    for (const [hasWebGpu, ios, f16] of cases) {
-      for (const b of pickBackends("", hasWebGpu, ios, f16)) assert.equal(b.model, QWEN);
-    }
+  it("uses Qwen by default on GPU/iOS and allows an explicit fast-model choice", () => {
+    for (const b of pickBackends("", true, false, true)) assert.equal(b.model, QWEN);
+    for (const b of pickBackends("", true, true)) assert.equal(b.model, QWEN);
+    assert.ok(pickBackends("", false, false).every((b) => b.model === SMOL360));
+    assert.ok(pickBackends("?model=135m", false, false).every((b) => b.model === SMOL135));
   });
   it("?model= opts in to a smaller model on a phone", () => {
     assert.deepEqual(pickBackends("?model=360m", true, true), [{ device: "wasm", dtype: "q4", model: SMOL360 }]);

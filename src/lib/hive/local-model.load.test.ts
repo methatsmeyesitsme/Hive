@@ -98,6 +98,7 @@ describe("a model file that does not fit in memory", () => {
     failing.add("wasm/q4"); // the file from the bug report
     setGpu(null);
     const m = await fresh("cpu");
+    Object.defineProperty(globalThis, "location", { value: { search: "?model=qwen" }, configurable: true });
     const out = await m.generateChat(msgs, { maxNewTokens: 5 });
     assert.deepEqual(attempts, ["wasm/q8"]);
     assert.equal(out.device, "wasm");
@@ -110,6 +111,7 @@ describe("a model file that does not fit in memory", () => {
     failing.add("wasm/q4");
     setGpu(null);
     const m = await fresh("cpu-all-fail");
+    Object.defineProperty(globalThis, "location", { value: { search: "?model=qwen" }, configurable: true });
     await assert.rejects(
       m.generateChat(msgs, { maxNewTokens: 5 }),
       /failed to allocate a buffer of size 786156820/,
@@ -132,6 +134,7 @@ describe("cancelling a generation", () => {
     slowTokens = 200;
     setGpu(null);
     const m = await fresh("cancel");
+    Object.defineProperty(globalThis, "location", { value: { search: "?model=qwen" }, configurable: true });
     const controller = new AbortController();
     let tokens = 0;
     const run = m.generateChat(msgs, {
@@ -170,6 +173,7 @@ describe("keeping the model warm between projects", () => {
     slowTokens = 0;
     setGpu(null);
     const m = await fresh("worn");
+    Object.defineProperty(globalThis, "location", { value: { search: "?model=qwen" }, configurable: true });
     await m.generateChat(msgs, { maxNewTokens: 5 });
     assert.equal(await m.releaseModelIfWorn(), false, "one run: keep the session");
     for (let i = 0; i < 63; i++) await m.generateChat(msgs, { maxNewTokens: 5 });
