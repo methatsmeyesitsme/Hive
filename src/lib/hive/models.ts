@@ -30,9 +30,9 @@ export type ModelSpec = {
 export const CORE_MODELS: Record<"MC" | "HRC" | "RO", ModelSpec> = {
   MC: {
     role: "MC",
-    sizeClass: "0.5B",
-    modelId: "onnx-community/Qwen2.5-0.5B-Instruct",
-    fallbackId: "HuggingFaceTB/SmolLM2-360M-Instruct",
+    sizeClass: "7B",
+    modelId: "keisuke-miyako/Qwen2.5-7B-Instruct-1M-onnx-int4",
+    fallbackId: "keisuke-miyako/Qwen2.5-3B-Instruct-onnx-int4",
     canSplit: false,
   },
   HRC: {
