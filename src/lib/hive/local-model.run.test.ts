@@ -34,23 +34,26 @@ const PAGE = "<!doctype html> <html> <body> hello </body> </html> and then a lot
     loads += 1;
     await sleep(40);
     const generator = async (
-      messages: { role: string; content: string }[],
-      opts: { max_new_tokens: number; streamer: FakeStreamer; stopping_criteria: FakeStopper },
+      messages: { role: string; content: string }[] | { role: string; content: string }[][],
+      opts: { max_new_tokens: number; streamer?: FakeStreamer; stopping_criteria?: FakeStopper },
     ) => {
-      active += 1;
+      const batch = Array.isArray(messages[0])
+        ? (messages as { role: string; content: string }[][])
+        : [messages as { role: string; content: string }[]];
+      active += batch.length;
       maxActive = Math.max(maxActive, active);
-      const words = PAGE.split(" ");
-      let out = "";
-      for (let i = 0; i < Math.min(words.length, opts.max_new_tokens); i++) {
-        await sleep(4);
-        const chunk = (i === 0 ? "" : " ") + words[i];
-        out += chunk;
-        opts.streamer.opts.token_callback_function?.([BigInt(i)]);
-        opts.streamer.opts.callback_function?.(chunk);
-        if (opts.stopping_criteria.interrupted) break;
+      const results = [];
+      for (const chat of batch) {
+        const words = PAGE.split(" ");
+        let out = "";
+        for (let i = 0; i < Math.min(words.length, opts.max_new_tokens); i++) {
+          await sleep(4);
+          out += (i === 0 ? "" : " ") + words[i];
+        }
+        results.push({ generated_text: [...chat, { role: "assistant", content: out }] });
       }
-      active -= 1;
-      return [{ generated_text: [...messages, { role: "assistant", content: out }] }];
+      active -= batch.length;
+      return results;
     };
     generator.tokenizer = {};
     return generator;
@@ -91,8 +94,8 @@ describe("generateChat with a persistent model", () => {
       ],
       { maxNewTokens: 5, label: "agents" },
     );
-    assert.equal(loads, 2, "the batch should reuse the existing loaded model");
-    assert.equal(maxActive, 3, "the model should execute the batched agent work together");
+    assert.equal(loads, 1, "the batch should reuse the existing loaded model");
+    assert.equal(maxActive, 3, "the batched agent work should execute together");
     assert.ok(a.text.length > 0 && b.text.length > 0 && c.text.length > 0);
     perf.finishRun();
   });
