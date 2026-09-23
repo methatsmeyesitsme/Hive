@@ -28,9 +28,6 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Auth invariant
-        run: npm run check:auth
-
       - name: Unit and integration tests
         run: npm run test
 
@@ -63,6 +60,10 @@ jobs:
           done
           cat /tmp/hive-dev.log
           exit 1
+
+
+      - name: Auth invariant
+        run: npm run check:auth
 
       - name: Browser smoke test
         run: node scripts/browser-smoke.mjs http://127.0.0.1:8080/ /workspace/hive-smoke.png
