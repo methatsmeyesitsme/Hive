@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 let loads = 0;
 let active = 0;
 let maxActive = 0;
+let slowTokens = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 class FakeStopper {
