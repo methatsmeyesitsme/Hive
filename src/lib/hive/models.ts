@@ -7,7 +7,8 @@
  *                    Each Splitter role-plays multiple LIs + Agents
  *                    via separate conversation contexts (context switching).
  *
- * These IDs are the open-weight Qwen checkpoints we target.
+ * These IDs are the open-weight Qwen checkpoints we target. The browser runner
+ * uses only checkpoints published in a Transformers.js-compatible ONNX layout.
  * The actual inference runtime (local server, vLLM, llama.cpp, etc.)
  * is replaceable; this module only defines the logical assignment.
  */
@@ -17,7 +18,7 @@ export type ModelRole = "MC" | "HRC" | "RO" | "Splitter";
 export type ModelSpec = {
   role: ModelRole;
   /** Human-readable size class */
-  sizeClass: "0.5B" | "1.5B" | "7B";
+  sizeClass: "0.5B" | "1.5B" | "3B" | "7B";
   /** Preferred Hugging Face / local model id */
   modelId: string;
   /** Fallback if the preferred model is unavailable */
@@ -30,9 +31,9 @@ export type ModelSpec = {
 export const CORE_MODELS: Record<"MC" | "HRC" | "RO", ModelSpec> = {
   MC: {
     role: "MC",
-    sizeClass: "7B",
-    modelId: "keisuke-miyako/Qwen2.5-7B-Instruct-1M-onnx-int4",
-    fallbackId: "keisuke-miyako/Qwen2.5-3B-Instruct-onnx-int4",
+    sizeClass: "3B",
+    modelId: "onnx-community/Qwen2.5-Coder-3B-Instruct",
+    fallbackId: "onnx-community/Qwen2.5-1.5B-Instruct",
     canSplit: false,
   },
   HRC: {

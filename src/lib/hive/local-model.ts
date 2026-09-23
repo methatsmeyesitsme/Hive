@@ -1,9 +1,9 @@
 /**
  * On-device model runner for Hive (browser only).
  *
- * Runs Qwen2.5-0.5B-Instruct with Transformers.js. No API key, no server
- * round-trip: the weights are downloaded once by the browser, cached, and
- * executed on WebGPU when available (falling back to WASM/CPU).
+ * Runs browser-compatible ONNX models with Transformers.js. No API key, no
+ * server round-trip: the weights are downloaded once by the browser, cached,
+ * and executed on WebGPU when available (falling back to WASM/CPU).
  *
  * Qwen ships in several file sizes: q4f16 ~480 MB (WebGPU only), q8 ~510 MB and
  * q4 ~790 MB. Many phones and low-memory browsers cannot allocate the 790 MB file
@@ -28,9 +28,11 @@ export const MODEL_LADDER: ModelSpec[] = [
   { id: "HuggingFaceTB/SmolLM2-135M-Instruct", name: "SmolLM2-135M" },
 ];
 
+/** MC uses a verified Transformers.js-compatible coding model first, then falls back
+ * to smaller compatible models if the preferred checkpoint cannot start.
+ */
 export const MC_MODEL_LADDER: ModelSpec[] = [
-  { id: "keisuke-miyako/Qwen2.5-7B-Instruct-1M-onnx-int4", name: "Qwen2.5-7B" },
-  { id: "keisuke-miyako/Qwen2.5-3B-Instruct-onnx-int4", name: "Qwen2.5-3B" },
+  { id: "onnx-community/Qwen2.5-Coder-3B-Instruct", name: "Qwen2.5-Coder-3B" },
   { id: "onnx-community/Qwen2.5-1.5B-Instruct", name: "Qwen2.5-1.5B" },
   { id: "onnx-community/Qwen2.5-0.5B-Instruct", name: "Qwen2.5-0.5B" },
 ];
@@ -198,36 +200,50 @@ export function pickBackends(
       ? 1
       : requestedRung;
   const ladder = activeModelLadder();
-  const model = ladder[Math.min(wasmRung, ladder.length - 1)];
-  const isQwen = /Qwen/i.test(model.id);
+  const selectedRung = Math.min(wasmRung, ladder.length - 1);
+  const fallbackRungs =
+    executionMode === "mc" && !forcedModel
+      ? ladder.map((_, index) => index).slice(selectedRung)
+      : [selectedRung];
   const forcedDtype = params.get("dtype");
   const dtype: LocalDtype | null =
     forcedDtype === "q4" || forcedDtype === "q4f16" || forcedDtype === "q8" ? forcedDtype : null;
 
-  const wasmDtypes: LocalDtype[] = dtype
-    ? [dtype === "q4f16" ? "q4" : dtype]
-    : isQwen
-      ? ["q8", "q4"]
-      : ["q4"];
-  const wasm: LocalBackend[] = wasmDtypes.map((d) => ({ device: "wasm", dtype: d, model }));
+  const backends: LocalBackend[] = [];
+  for (const rung of fallbackRungs) {
+    const model = ladder[rung];
+    const isQwen = /Qwen/i.test(model.id);
 
-  const wasmOnly = params.get("device") === "wasm" || ios || !hasWebGpu;
-  if (wasmOnly) return wasm;
+    const wasmDtypes: LocalDtype[] = dtype
+      ? [dtype === "q4f16" ? "q4" : dtype]
+      : isQwen
+        ? ["q8", "q4"]
+        : ["q4"];
+    const wasm = wasmDtypes.map((d): LocalBackend => ({ device: "wasm", dtype: d, model }));
 
-  const gpuDtypes: LocalDtype[] = dtype
-    ? [dtype]
-    : isQwen && hasShaderF16
-      ? ["q4f16", "q4"]
-      : ["q4"];
+    const wasmOnly = params.get("device") === "wasm" || ios || !hasWebGpu;
+    if (wasmOnly) {
+      backends.push(...wasm);
+      continue;
+    }
 
-  const gpu = gpuDtypes
-    .filter((d) => {
-      if (maxStorageBufferBindingSize == null) return true;
-      return APPROX_FILE_MB[d] * 1024 * 1024 <= maxStorageBufferBindingSize;
-    })
-    .map((d): LocalBackend => ({ device: "webgpu", dtype: d, model }));
+    const gpuDtypes: LocalDtype[] = dtype
+      ? [dtype]
+      : isQwen && hasShaderF16
+        ? ["q4f16", "q4"]
+        : ["q4"];
 
-  return [...gpu, ...wasm];
+    const gpu = gpuDtypes
+      .filter((d) => {
+        if (maxStorageBufferBindingSize == null) return true;
+        return APPROX_FILE_MB[d] * 1024 * 1024 <= maxStorageBufferBindingSize;
+      })
+      .map((d): LocalBackend => ({ device: "webgpu", dtype: d, model }));
+
+    backends.push(...gpu, ...wasm);
+  }
+
+  return backends;
 }
 
 function detectIOS(): boolean {

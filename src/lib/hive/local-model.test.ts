@@ -7,7 +7,9 @@ import {
   isIOS,
   isMemoryFailure,
   MODEL_LADDER,
+  MC_MODEL_LADDER,
   pickBackends,
+  setModelExecutionMode,
   progressLabel,
   isFirefox,
   useLowMemory,
@@ -15,6 +17,7 @@ import {
 } from "./local-model.ts";
 
 const [QWEN, SMOL360, SMOL135] = MODEL_LADDER;
+const [MC_CODER3B, MC_QWEN15B, MC_QWEN05B] = MC_MODEL_LADDER;
 
 describe("effectiveRung", () => {
   it("is always Qwen unless the address asks for another model", () => {
@@ -87,6 +90,27 @@ describe("pickBackends", () => {
       { device: "webgpu", dtype: "q4f16", model: QWEN },
       { device: "wasm", dtype: "q4", model: QWEN },
     ]);
+  });
+});
+
+describe("MC Only model ladder", () => {
+  it("uses the verified 3B coding model first and includes smaller fallbacks", () => {
+    setModelExecutionMode("mc");
+    try {
+      assert.equal(MC_CODER3B.id, "onnx-community/Qwen2.5-Coder-3B-Instruct");
+      assert.equal(MC_QWEN15B.id, "onnx-community/Qwen2.5-1.5B-Instruct");
+      assert.equal(MC_QWEN05B.id, "onnx-community/Qwen2.5-0.5B-Instruct");
+
+      assert.deepEqual(pickBackends("", true, false, true).slice(0, 4), [
+        { device: "webgpu", dtype: "q4f16", model: MC_CODER3B },
+        { device: "webgpu", dtype: "q4", model: MC_CODER3B },
+        { device: "wasm", dtype: "q8", model: MC_CODER3B },
+        { device: "wasm", dtype: "q4", model: MC_CODER3B },
+      ]);
+      assert.equal(pickBackends("", true, false, true).at(-1)?.model, MC_QWEN05B);
+    } finally {
+      setModelExecutionMode("swarm");
+    }
   });
 });
 
