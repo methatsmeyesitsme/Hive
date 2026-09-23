@@ -138,7 +138,8 @@ export function LeftSidebar({
                 )}
               </div>
             </div>
-          ))}}        </ul>
+          ))}
+        </ul>
       </ScrollArea>
 
       <div className="mt-auto border-t border-line p-2 space-y-0.5">

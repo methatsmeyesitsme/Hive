@@ -102,7 +102,7 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
           >
             🗑
           </button>
-        )
+        )}
       </header>
 
       <ScrollArea className="flex-1">
