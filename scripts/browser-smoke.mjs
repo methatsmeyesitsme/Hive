@@ -107,9 +107,20 @@ try {
     page.on("pageerror", (err) => errors.pageErrors.push(String(err?.message || err)));
     // `domcontentloaded`, not `networkidle`: Vite keeps an HMR websocket open, so
     // networkidle never settles and would burn the whole timeout.
-    const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
-    const status = resp?.status() ?? 0;
-    await page.waitForTimeout(1000);
+    let resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    let status = resp?.status() ?? 0;
+    await page.waitForTimeout(1200);
+
+    const bootstrapFailed = errors.pageErrors.some((e) => /dynamically imported module|Outdated Optimize Dep|Failed to fetch dynamically imported module/i.test(e))
+      || errors.consoleErrors.some((e) => /504.*Outdated Optimize Dep|Failed to load resource/i.test(e));
+    if (bootstrapFailed) {
+      errors.consoleErrors.length = 0;
+      errors.pageErrors.length = 0;
+      await page.waitForTimeout(800);
+      resp = await page.reload({ waitUntil: "domcontentloaded", timeout: timeoutMs });
+      status = resp?.status() ?? 0;
+      await page.waitForTimeout(1200);
+    }
 
     const title = await page.title();
     const hasCanvas = (await page.locator("canvas").count()) > 0;

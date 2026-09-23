@@ -51,7 +51,7 @@ jobs:
       - name: Start dev server
         shell: bash
         run: |
-          nohup npm run dev >/tmp/hive-dev.log 2>&1 &
+          nohup npm run dev -- --force >/tmp/hive-dev.log 2>&1 &
           for i in {1..60}; do
             if curl -fsS http://127.0.0.1:8080/ >/dev/null; then
               exit 0
