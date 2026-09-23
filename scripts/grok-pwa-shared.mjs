@@ -401,15 +401,20 @@ function insertBeforeHeadClose(html, snippet) {
 }
 
 export function normalizeHeadContext(ctx = {}) {
+  const hasExplicitCwd = Object.prototype.hasOwnProperty.call(ctx, "cwd");
   const cwd = ctx.cwd ?? process.cwd();
-  // Middleware passes a baked `site`. Still consult the workspace so a
-  // public/og.jpg generated after that snapshot (or missed by a wrong cwd)
-  // wins over the og.grok.me placeholder. Vercel has no public/ to read, so
-  // a correct bake is unchanged.
-  const site = applyCustomCardFromFs(
-    ctx.site !== undefined ? ctx.site : snapshotOgIdentity(cwd).site,
-    cwd,
-  );
+  // Only a caller that explicitly supplies a workspace should have filesystem
+  // state influence head identity. This keeps direct injector calls isolated
+  // from the host app's own site.json/og.jpg, while Vite/Nitro callers can pass
+  // their real workspace or baked identity.
+  const baseSite = ctx.site !== undefined
+    ? ctx.site
+    : hasExplicitCwd
+      ? snapshotOgIdentity(cwd).site
+      : {};
+  const site = hasExplicitCwd
+    ? applyCustomCardFromFs(baseSite, cwd)
+    : baseSite;
   const appName = resolveOgTitle(site, ctx.appName ?? DEFAULT_APP_NAME, ctx.host ?? "");
   return {
     appName,
