@@ -286,7 +286,7 @@ function writeCrumb(crumb: Breadcrumb | null) {
   try {
     if (crumb) localStorage.setItem(CRUMB_KEY, JSON.stringify(crumb));
     else localStorage.removeItem(CRUMB_KEY);
-  } catch {}
+  } catch { /* breadcrumb storage is optional */ }
 }
 function setBreadcrumb(stage: string, device: string | null) { writeCrumb({ stage, device, at: Date.now() }); }
 export function markBreadcrumbClean() {
