@@ -57,7 +57,7 @@ const PAGE = "<!doctype html> <html> <body> hello </body> </html> and then a lot
   },
 };
 
-const { generateChat } = await import("./local-model.ts");
+const { generateChat, generateChatParallel } = await import("./local-model.ts");
 const { perf } = await import("./perf.ts");
 
 const msgs = [
@@ -79,6 +79,22 @@ describe("generateChat with a persistent model", () => {
     assert.ok(b.text.length > 0 && c.text.length > 0);
     const run = perf.finishRun();
     assert.equal(run?.gens.length, 3);
+  });
+
+  it("runs multiple agent chats in one parallel batch", async () => {
+    perf.beginRun();
+    const [a, b, c] = await generateChatParallel(
+      [
+        { messages: msgs, maxNewTokens: 5 },
+        { messages: msgs, maxNewTokens: 5 },
+        { messages: msgs, maxNewTokens: 5 },
+      ],
+      { maxNewTokens: 5, label: "agents" },
+    );
+    assert.equal(loads, 2, "the batch should reuse the existing loaded model");
+    assert.equal(maxActive, 3, "the model should execute the batched agent work together");
+    assert.ok(a.text.length > 0 && b.text.length > 0 && c.text.length > 0);
+    perf.finishRun();
   });
 
   it("stops generating as soon as the stop condition is met", async () => {
