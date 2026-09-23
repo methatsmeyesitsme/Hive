@@ -10,7 +10,7 @@ try {
   await page.locator("#preview").evaluate((el, value) => { el.srcdoc = value; }, html);
   const frame = page.frameLocator("#preview");
   await frame.locator("#b").click();
-  assert.equal(await frame.locator("#o").inputValue(), "1");
+  assert.equal(await frame.locator("#o").textContent(), "1");
   console.log(JSON.stringify({ ok: true, preview: "sandboxed iframe scripts and forms execute" }));
 } finally {
   await browser.close();
