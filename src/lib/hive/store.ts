@@ -95,7 +95,7 @@ type HiveState = {
   deleteProject: (id: string) => void;
 
   send: (text: string, attachments: Attachment[]) => Promise<void>;
-  cancel: () => void;
+  cancel: (reason?: string) => void;
   freeze: () => void;
 
   addMemory: (entry: Omit<MemoryEntry, "id" | "createdAt" | "editable">) => void;
@@ -867,17 +867,18 @@ export const useHiveStore = create<HiveState>()(
         }
       },
 
-      cancel: () => {
+      cancel: (reason) => {
         abortRun?.abort();
         abortRun = null;
         lockMap.clear();
         const project = get().activeProject();
+        const why = reason?.trim() || "you stopped the run";
         if (project) {
           const msg: ChatMessage = {
             id: nid("msg"),
             role: "mc",
             content:
-              "Cancelled. Hive stopped further deployment. Completed work is still here — nothing was deleted.",
+              `Cancelled because ${why}. Hive stopped further deployment. Completed work is still here — nothing was deleted.`,
             createdAt: Date.now(),
           };
           set((s) => ({
@@ -896,7 +897,7 @@ export const useHiveStore = create<HiveState>()(
           agentTotal: 0,
           fileLocks: [],
           previewRunning: false,
-          audits: logAudits(get().audits, [audit("MC", "Run cancelled by human")], "final"),
+          audits: logAudits(get().audits, [audit("MC", `Run cancelled: ${why}`)], "final"),
         });
       },
 
