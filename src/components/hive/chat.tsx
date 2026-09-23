@@ -271,8 +271,8 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
                           <span>{executionMode === "swarm" ? "All Agents" : "MC Only"}</span>
                           <span
                             className={cn(
-                              "flex size-5 items-center justify-center rounded-full bg-fog transition-transform",
-                              executionMode === "swarm" ? "translate-x-0" : "translate-x-[77px]",
+                              "absolute top-1 flex size-5 items-center justify-center rounded-full bg-fog transition-[left,right] duration-200",
+                              executionMode === "swarm" ? "right-1" : "left-1",
                             )}
                           />
                         </button>
