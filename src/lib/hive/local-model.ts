@@ -222,11 +222,9 @@ async function candidateBackends(): Promise<LocalBackend[]> {
     }
   }
   const search = typeof location === "undefined" ? "" : location.search;
-  const firefox = isFirefox(typeof navigator === "undefined" ? "" : navigator.userAgent);
-  const forcedWebGpu = new URLSearchParams(search).get("device") === "webgpu";
   return pickBackends(
     search,
-    hasWebGpu && !avoidWebGpu && (forcedWebGpu || !firefox),
+    hasWebGpu && !avoidWebGpu,
     detectIOS(),
     hasShaderF16,
     maxStorageBufferBindingSize,
@@ -281,7 +279,7 @@ function backendLabel({ device, dtype, model }: LocalBackend): string {
 }
 
 let runsSinceLoad = 0;
-const WORN_AFTER_RUNS = 4;
+const WORN_AFTER_RUNS = 32;
 type Loaded = { generator: Generator; device: LocalDevice; label: string; mod: TransformersModule };
 let loading: Promise<Loaded> | null = null;
 
