@@ -184,8 +184,8 @@ function pageBudget(device: "webgpu" | "wasm", app = false): number {
   if (Number.isFinite(override) && override >= 200 && override <= 4000) return Math.floor(override);
   // Tighter budgets = much faster wall time on-device; early stop on </html> still applies.
   // An app needs a little more room than a page: a script cut off at the end does not run.
-  if (device === "webgpu") return app ? 720 : 850;
-  return app ? 460 : 520;
+  if (device === "webgpu") return app ? 600 : 700;
+  return app ? 380 : 450;
 }
 
 type Brief = ReturnType<typeof parseBrief>;
@@ -216,7 +216,7 @@ async function parallelAgentThinking(
           `Human request: ${data.prompt}\nYour assignment: ${li.objective}\nProject: ${data.projectName}`,
       },
     ],
-    maxNewTokens: 64,
+    maxNewTokens: 32,
   }));
 
   const search =
@@ -230,7 +230,7 @@ async function parallelAgentThinking(
   for (let i = 0; i < requests.length; i += width) {
     const batch = requests.slice(i, i + width);
     const outputs = await generateChatParallel(batch, {
-      maxNewTokens: 64,
+      maxNewTokens: 32,
       label: "agents",
       signal: data.signal,
     });
