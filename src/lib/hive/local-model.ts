@@ -145,7 +145,15 @@ export function pickBackends(
   maxStorageBufferBindingSize: number | null = null,
 ): LocalBackend[] {
   const params = new URLSearchParams(search);
-  const model = MODEL_LADDER[effectiveRung(search)];
+  const forcedModel = params.get("model");
+  const requestedRung = effectiveRung(search);
+  // Keep Qwen on WebGPU. On CPU-only desktops, use the smaller 360M model
+  // unless the user explicitly selected a model, keeping the slow path usable.
+  const wasmRung =
+    !hasWebGpu && !ios && !forcedModel
+      ? 1
+      : requestedRung;
+  const model = MODEL_LADDER[wasmRung];
   const isQwen = model === MODEL_LADDER[0];
   const forcedDtype = params.get("dtype");
   const dtype: LocalDtype | null =
@@ -293,6 +301,7 @@ function loadModel(): Promise<Loaded> {
     const files = new Map<string, { loaded: number; total: number }>();
     let attempt = "wasm";
     let lastLabel = "";
+    let lastProgressUiAt = -Infinity;
     const onProgress = (e: ProgressEvent) => {
       if (!e.file || typeof e.total !== "number" || typeof e.loaded !== "number") return;
       files.set(e.file, { loaded: e.loaded, total: e.total });
@@ -301,7 +310,11 @@ function loadModel(): Promise<Loaded> {
       if (total > 0) {
         const progress = Math.min(1, loaded / total);
         if (progress >= 0.995 && tDownloadDone === null) tDownloadDone = perf.now();
-        setStatus({ progress });
+        const now = perf.now();
+        if (progress >= 0.995 || now - lastProgressUiAt >= 120) {
+          lastProgressUiAt = now;
+          setStatus({ progress });
+        }
         const label = progressLabel(progress);
         if (label !== lastLabel) { lastLabel = label; setBreadcrumb(label, attempt); }
       }
@@ -358,7 +371,7 @@ function loadModel(): Promise<Loaded> {
         failedBackends.add(label);
         if (isMemoryFailure(err)) tooBig.push({ device, mb: APPROX_FILE_MB[dtype] });
         if (device === "webgpu" && isRuntimeFailure(err)) avoidWebGpu = true;
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 20));
       }
     }
     throw lastError ?? new Error("No usable compute backend");
@@ -407,7 +420,7 @@ async function resetModel(): Promise<void> {
     setStatus({ stage: "idle", progress: 0, error: null });
     try {
       const loaded = await old;
-      await Promise.race([Promise.resolve(loaded?.generator.dispose?.()), new Promise((resolve) => setTimeout(resolve, 1500))]);
+      await Promise.race([Promise.resolve(loaded?.generator.dispose?.()), new Promise((resolve) => setTimeout(resolve, 700))]);
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 50));
   })();
