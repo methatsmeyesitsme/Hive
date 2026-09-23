@@ -16,10 +16,10 @@ class FakeStopper {
   }
 }
 class FakeStreamer {
-  opts: { callback_function?: (t: string) => void; token_callback_function?: (t: bigint[]) => void };
+  opts: { callback_function?: (t: string) => void; token_callback_function?: () => void };
   constructor(
     _tokenizer: unknown,
-    opts: { callback_function?: (t: string) => void; token_callback_function?: (t: bigint[]) => void },
+    opts: { callback_function?: (t: string) => void; token_callback_function?: () => void },
   ) {
     this.opts = opts;
   }
