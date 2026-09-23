@@ -433,6 +433,27 @@ export const useHiveStore = create<HiveState>()(
         perf.beginRun();
         lockMap.clear();
 
+        // Claim the run before any awaited background-server check. This prevents
+        // duplicate form submits from starting a second run and aborting this one.
+        set({
+          runId,
+          phase: "planning",
+          previewRunning: false,
+          pauseReason: null,
+          status: {
+            mc: "Starting MC",
+            hrc: "Waiting for objective",
+            ro: state.githubConnected ? "Reviewing repository context" : "Standing by",
+          },
+          lieutenants: [],
+          splitters: [],
+          agentTotal: 0,
+          fileLocks: [],
+          audits: logAudits(get().audits, [
+            audit("MC", "Received the human’s original request"),
+          ]),
+        });
+
         const userMsg: ChatMessage = {
           id: nid("msg"),
           role: "user",
@@ -499,22 +520,11 @@ export const useHiveStore = create<HiveState>()(
 
         const provisional = estimateSwarm(prompt);
         set({
-          runId,
-          phase: "planning",
-          previewRunning: false,
-          pauseReason: null,
           status: {
             mc: "Planning the requested changes",
             hrc: "Waiting for objective",
             ro: state.githubConnected ? "Reviewing repository context" : "Standing by",
           },
-          lieutenants: [],
-          splitters: [],
-          agentTotal: 0,
-          fileLocks: [],
-          audits: logAudits(get().audits, [
-            audit("MC", "Received the human’s original request"),
-          ]),
         });
 
         const apiPromise = runMcTask({
