@@ -3,7 +3,7 @@ import { getSql } from "@/lib/db";
 import { requireUserId } from "@/lib/auth/verify.server";
 import { buildPlan, extractHtml, isUsablePage, looksLikeApp, needsWebResearch, pageTitle, polishHtml, replyLine } from "./mc-parse";
 import { searchWebServer, type WebSearchResult } from "./web-search.server";
-import type { ExecPlan, McTaskResult } from "./types";
+import type { ExecPlan, ExecutionMode, McTaskResult } from "./types";
 
 export type BackgroundInput = {
   projectId: string;
@@ -14,6 +14,7 @@ export type BackgroundInput = {
   currentHtml?: string | null;
   projectName: string;
   effort: number;
+  executionMode?: ExecutionMode;
 };
 
 type StoredJob = {
@@ -134,28 +135,34 @@ async function processJob(id: string, input: BackgroundInput, userId: string): P
   await sql`update hive_background_jobs set status = 'running', updated_at = now() where id = ${id} and user_id = ${userId}`;
   try {
     const app = looksLikeApp(input.prompt);
+    const mcOnly = (input.executionMode ?? "swarm") === "mc";
     if (await jobWasCancelled(sql, id, userId)) return;
-    const webResults = needsWebResearch(input.prompt) ? await searchWebServer(input.prompt) : [];
+    const webResults = !mcOnly && needsWebResearch(input.prompt)
+      ? await searchWebServer(input.prompt)
+      : [];
     if (await jobWasCancelled(sql, id, userId)) return;
     const webResearchContext = webResults.length
       ? `\nRO research:\n${webResults.map((r, i) => `[${i + 1}] ${r.title} — ${r.snippet}`).join("\n")}`
       : "";
-    const requests = [
-      { role: "system" as const, content: agentPrompt("S1", app ? "Determine the interaction logic and edge cases." : "Extract essential structure, semantics, behavior, and content.") },
-      { role: "system" as const, content: agentPrompt("S2", "Determine a distinctive visual system, responsive behavior, and compact styling direction.") },
-    ];
-    const agentResults = await Promise.all([
-      xai(
-        [{ role: "system", content: requests[0].content }, { role: "user", content: input.prompt + webResearchContext }],
-        180,
-        "low",
-      ),
-      xai(
-        [{ role: "system", content: requests[1].content }, { role: "user", content: input.prompt + webResearchContext }],
-        180,
-        "low",
-      ),
-    ]);
+    let agentResults: string[] = [];
+    if (!mcOnly) {
+      const requests = [
+        { role: "system" as const, content: agentPrompt("S1", app ? "Determine the interaction logic and edge cases." : "Extract essential structure, semantics, behavior, and content.") },
+        { role: "system" as const, content: agentPrompt("S2", "Determine a distinctive visual system, responsive behavior, and compact styling direction.") },
+      ];
+      agentResults = await Promise.all([
+        xai(
+          [{ role: "system", content: requests[0].content }, { role: "user", content: input.prompt + webResearchContext }],
+          180,
+          "low",
+        ),
+        xai(
+          [{ role: "system", content: requests[1].content }, { role: "user", content: input.prompt + webResearchContext }],
+          180,
+          "low",
+        ),
+      ]);
+    }
     if (await jobWasCancelled(sql, id, userId)) return;
 
     const content = await xai(
@@ -172,7 +179,7 @@ async function processJob(id: string, input: BackgroundInput, userId: string): P
     if (!html || !isUsablePage(html)) {
       const repaired = await xai(
         [
-          { role: "system", content: "You are an HTML repair worker. Return only one complete self-contained HTML5 page. Finish the supplied page while preserving the request and design." },
+          { role: "system", content: "You are an HTML repair worker. Return only one complete self-contained HTML5 page. Finish the supplied page while preserving the request and design. Never use a premade website template, canned layout, stock section order, or generic filler." },
           { role: "user", content: `Request: ${input.prompt}\nPartial page:\n${content.slice(0, 12000)}` },
         ],
         Math.max(1200, Math.round(modelTokens(input.effort) * 0.6)),
@@ -186,10 +193,12 @@ async function processJob(id: string, input: BackgroundInput, userId: string): P
 
     const plan: ExecPlan = {
       objective: input.prompt.slice(0, 240),
-      strategy: "RO researched current sources when needed, independent agents analyzed the request, then MC generated and validated the final page.",
+      strategy: mcOnly
+        ? "MC generated and validated the final page directly."
+        : "RO researched current sources when needed, independent agents analyzed the request, then MC generated and validated the final page.",
       researchNeeded: webResults.length > 0,
       researchTopic: webResults.length > 0 ? input.prompt.slice(0, 240) : "",
-      lieutenants: buildPlan(true),
+      lieutenants: mcOnly ? [] : buildPlan(true, input.prompt),
     };
     const result: McTaskResult & { ok: true } = {
       ok: true,

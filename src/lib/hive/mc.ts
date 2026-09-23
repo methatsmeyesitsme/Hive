@@ -22,7 +22,7 @@ import {
 } from "./mc-parse";
 import { perf } from "./perf";
 import { searchWeb, type WebSearchResult } from "./web-search";
-import type { Artifact, McTaskResult } from "./types";
+import type { Artifact, ExecutionMode, McTaskResult } from "./types";
 
 /**
  * MC, running on-device with Qwen2.5-0.5B-Instruct.
@@ -51,6 +51,7 @@ type RunInput = {
   currentHtml?: string | null;
   projectName: string;
   effort: number;
+  executionMode: ExecutionMode;
   /** Live progress while the model writes (called per token; the caller throttles). */
   onProgress?: (info: { label: string; tokens: number }) => void;
   /** Cancelling stops the model within a token, so the next request is not stuck behind it. */
@@ -148,7 +149,8 @@ function sourceLine(results: WebSearchResult[]): string {
 }
 
 async function researchIfNeeded(data: RunInput): Promise<WebSearchResult[]> {
-  if (!needsWebResearch(data.prompt)) return [];
+  // MC Only deliberately keeps RO out of the run.
+  if (data.executionMode === "mc" || !needsWebResearch(data.prompt)) return [];
   data.onProgress?.({ label: "RO searching the web", tokens: 0 });
   const results = await searchWeb(data.prompt);
   data.onProgress?.({
@@ -251,9 +253,9 @@ function pageBudget(device: "webgpu" | "wasm", app = false, effort = 50): number
 }
 
 async function runRealAgents(data: RunInput, app: boolean, webResults: WebSearchResult[] = []): Promise<string[]> {
-  // Very small builds are handled directly by MC. This keeps tiny requests fast while
-  // preserving the independent-agent pass for substantive builds.
-  if (!needsAgentPass(data.prompt)) {
+  // MC Only deliberately skips the independent-agent pass. Tiny builds also stay on
+  // MC's fast path even in the normal swarm mode.
+  if (data.executionMode === "mc" || !needsAgentPass(data.prompt)) {
     data.onProgress?.({ label: "simple build; MC working directly", tokens: 0 });
     return [];
   }
@@ -357,7 +359,7 @@ async function writePage(
     strategy: brief?.strategy ?? "Write the whole page in one pass.",
     researchNeeded: webResults.length > 0,
     researchTopic: webResults.length > 0 ? data.prompt.slice(0, 240) : "",
-    lieutenants: buildPlan(true, data.prompt),
+    lieutenants: data.executionMode === "mc" ? [] : buildPlan(true, data.prompt),
   };
 
   const generatedName = projectNameFromText(out.text, data.prompt);

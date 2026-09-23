@@ -5,6 +5,8 @@ export type BackgroundAttachment = {
   textExcerpt?: string;
 };
 
+import type { ExecutionMode } from "./types";
+
 export type BackgroundInput = {
   projectId: string;
   prompt: string;
@@ -14,6 +16,7 @@ export type BackgroundInput = {
   currentHtml?: string | null;
   projectName: string;
   effort: number;
+  executionMode: ExecutionMode;
 };
 
 export type BackgroundJob = {

@@ -38,6 +38,7 @@ import type {
   Project,
   RunPhase,
   SplitterState,
+  ExecutionMode,
 } from "./types";
 import { nid } from "../utils";
 
@@ -55,6 +56,7 @@ type HiveState = {
   aiAvailable: boolean | null;
   effort: number;
   backgroundJobs: Record<string, string>;
+  executionMode: ExecutionMode;
 
   projects: Project[];
   activeProjectId: string | null;
@@ -94,6 +96,7 @@ type HiveState = {
   setPreviewOpen: (open: boolean) => void;
   runPreview: () => void;
   setEffort: (effort: number) => void;
+  setExecutionMode: (mode: ExecutionMode) => void;
   resumeBackgroundJobs: () => Promise<void>;
 
   createProject: (name?: string, repoFullName?: string | null) => void;
@@ -227,6 +230,7 @@ export const useHiveStore = create<HiveState>()(
       aiAvailable: null,
       effort: 50,
       backgroundJobs: {},
+      executionMode: "swarm",
 
       projects: [],
       activeProjectId: null,
@@ -303,6 +307,7 @@ export const useHiveStore = create<HiveState>()(
       setPreviewOpen: (open) => set({ previewOpen: open }),
       runPreview: () => set({ previewRunning: true, previewOpen: true }),
       setEffort: (effort) => set({ effort: Math.max(0, Math.min(100, Math.round(effort))) }),
+      setExecutionMode: (mode) => set({ executionMode: mode }),
 
       resumeBackgroundJobs: async () => {
         const jobs = await listBackgroundJobs();
@@ -426,6 +431,7 @@ export const useHiveStore = create<HiveState>()(
 
       send: async (text, attachments, requestedEffort) => {
         const effort = Math.max(0, Math.min(100, Math.round(requestedEffort ?? get().effort)));
+        const executionMode = get().executionMode;
         setModelEffort(effort);
         const prompt = text.trim();
         if (!prompt && attachments.length === 0) return;
@@ -514,6 +520,7 @@ export const useHiveStore = create<HiveState>()(
           currentHtml: project.artifact?.html ?? null,
           projectName: project.name,
           effort,
+          executionMode,
         };
         const background = await enqueueBackgroundJob(backgroundInput);
         if (background.ok) {
@@ -521,11 +528,17 @@ export const useHiveStore = create<HiveState>()(
           set({
             phase: "working",
             backgroundJobs: { ...get().backgroundJobs, [project.id]: background.jobId },
-            status: {
-              mc: "Running in background — safe to close Hive",
-              hrc: "Server worker running",
-              ro: "Standing by",
-            },
+            status: executionMode === "mc"
+              ? {
+                  mc: "Running MC in background — safe to close Hive",
+                  hrc: "MC Only — HRC disabled",
+                  ro: "MC Only — RO disabled",
+                }
+              : {
+                  mc: "Running in background — safe to close Hive",
+                  hrc: "Server worker running",
+                  ro: "Standing by",
+                },
             lieutenants: [],
             splitters: [],
             agentTotal: 0,
@@ -535,13 +548,23 @@ export const useHiveStore = create<HiveState>()(
           return;
         }
 
-        const provisional = looksLikeBuild(prompt) ? buildPlan(true, prompt) : buildPlan(false);
+        const provisional = executionMode === "mc"
+          ? []
+          : looksLikeBuild(prompt)
+            ? buildPlan(true, prompt)
+            : buildPlan(false);
         set({
-          status: {
-            mc: "Planning the requested changes",
-            hrc: "Waiting for objective",
-            ro: state.githubConnected ? "Reviewing repository context" : "Standing by",
-          },
+          status: executionMode === "mc"
+            ? {
+                mc: "MC is taking the request",
+                hrc: "MC Only — HRC disabled",
+                ro: "MC Only — RO disabled",
+              }
+            : {
+                mc: "Planning the requested changes",
+                hrc: "Waiting for objective",
+                ro: state.githubConnected ? "Reviewing repository context" : "Standing by",
+              },
         });
 
         const apiPromise = runMcTask({
@@ -562,6 +585,7 @@ export const useHiveStore = create<HiveState>()(
             currentHtml: project.artifact?.html ?? null,
             projectName: project.name,
             effort,
+            executionMode,
             signal,
             // Show the model's real progress in MC's status line (a few updates a second).
             onProgress: (() => {
@@ -591,6 +615,7 @@ export const useHiveStore = create<HiveState>()(
         showModelLine(getModelStatus());
         const unsubModel = subscribeModelStatus(showModelLine);
         void apiPromise.then(unsubModel, unsubModel);
+
 
         // Splitter bookkeeping for this run (filled in once HRC allocates).
         let splitPlans: SplitterPlan[] = [];
@@ -651,6 +676,86 @@ export const useHiveStore = create<HiveState>()(
           syncSplitters();
           perf.finishRun();
         };
+
+        if (executionMode === "mc") {
+          try {
+            set({
+              phase: "working",
+              status: {
+                mc: "MC is working directly",
+                hrc: "MC Only — HRC disabled",
+                ro: "MC Only — RO disabled",
+              },
+            });
+            const result = await apiPromise;
+            if (signal.aborted || get().runId !== runId) return;
+            if (!result.ok) {
+              fail(result.error);
+              return;
+            }
+
+            set({
+              phase: "extracting",
+              status: {
+                mc: "Presenting completed work",
+                hrc: "MC Only — HRC disabled",
+                ro: "MC Only — RO disabled",
+              },
+            });
+            for (const mem of result.memory) {
+              get().addMemory(mem);
+            }
+            if (result.artifact) {
+              get().addMemory({
+                title: `Completed: ${result.artifact.title}`,
+                content: result.plan.objective,
+                source: "work",
+              });
+            }
+
+            const mcMsg: ChatMessage = {
+              id: nid("msg"),
+              role: "mc",
+              content: result.mcMessage,
+              createdAt: Date.now(),
+              hasArtifact: Boolean(result.artifact),
+            };
+            const artifact: Artifact | null = result.artifact
+              ? { ...result.artifact, ready: true }
+              : get().activeProject()?.artifact ?? null;
+
+            patchProject((p) => ({
+              ...p,
+              messages: [...p.messages, mcMsg],
+              artifact,
+              updatedAt: Date.now(),
+              name:
+                p.name === "New Project" || p.name === "Untitled project"
+                  ? result.projectName.slice(0, 48)
+                  : p.name,
+            }));
+
+            lockMap.clear();
+            perf.finishRun();
+            set({
+              phase: "complete",
+              agentTotal: 0,
+              fileLocks: [],
+              previewRunning: false,
+              status: {
+                mc: "Work presented to the human",
+                hrc: "MC Only — HRC disabled",
+                ro: "MC Only — RO disabled",
+              },
+              audits: logAudits(get().audits, [audit("MC", "Presented completed work directly")], "final"),
+            });
+          } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") return;
+            fail("Something went wrong while MC was working. Try again.");
+          }
+          return;
+        }
+
 
         try {
           await pace(700);

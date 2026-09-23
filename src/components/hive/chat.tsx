@@ -18,6 +18,8 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
   const project = useHiveStore((s) => s.activeProject());
   const send = useHiveStore((s) => s.send);
   const cancel = useHiveStore((s) => s.cancel);
+  const executionMode = useHiveStore((s) => s.executionMode);
+  const setExecutionMode = useHiveStore((s) => s.setExecutionMode);
   const phase = useHiveStore((s) => s.phase);
   const frozen = useHiveStore((s) => s.frozen);
   const deleteProject = useHiveStore((s) => s.deleteProject);
@@ -241,6 +243,40 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
                     <div className="mt-1 flex justify-between text-[10px] text-dim">
                       <span>Lowest</span>
                       <span>Highest</span>
+                    </div>
+
+                    <div className="mt-4 border-t border-line pt-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-medium text-fog">Run mode</p>
+                          <p className="mt-0.5 text-[10px] text-dim">
+                            {executionMode === "swarm" ? "MC + the Hive swarm" : "Only MC runs the request"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={executionMode === "swarm"}
+                          aria-label="Run mode"
+                          title={executionMode === "swarm" ? "Switch to MC Only" : "Switch to All Agents"}
+                          onClick={() => setExecutionMode(executionMode === "swarm" ? "mc" : "swarm")}
+                          disabled={frozen || aiAvailable === false}
+                          className={cn(
+                            "flex h-7 min-w-[104px] items-center justify-between rounded-full border px-1.5 text-[10px] font-medium transition-colors",
+                            executionMode === "swarm"
+                              ? "border-honey/40 bg-honey/10 text-honey"
+                              : "border-line bg-navy-3 text-mist",
+                          )}
+                        >
+                          <span>{executionMode === "swarm" ? "All Agents" : "MC Only"}</span>
+                          <span
+                            className={cn(
+                              "flex size-5 items-center justify-center rounded-full bg-fog transition-transform",
+                              executionMode === "swarm" ? "translate-x-0" : "translate-x-[77px]",
+                            )}
+                          />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}

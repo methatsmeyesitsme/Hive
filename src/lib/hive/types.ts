@@ -1,5 +1,7 @@
 export type Role = "MC" | "HRC" | "RO" | "Splitter" | "Li" | "Agent";
 
+export type ExecutionMode = "swarm" | "mc";
+
 export type RunPhase =
   | "idle"
   | "planning"
