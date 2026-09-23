@@ -421,9 +421,9 @@ export async function releaseModelIfWorn(): Promise<boolean> {
   await resetModel(); return true;
 }
 export function startModelPreload(): void {
-  if (!localModelSupported()) return;
-  if (new URLSearchParams(location.search).get("preload") === "off") return;
-  void warmModelIfCached();
+  // Do not load or initialize the local model when Hive opens.
+  // The model is loaded lazily by generateChat()/generateChatParallel()
+  // only when an actual AI generation is requested.
 }
 export type ParallelGenerateRequest = {
   messages: LocalChatMessage[];
