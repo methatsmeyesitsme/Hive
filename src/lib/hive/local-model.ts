@@ -27,6 +27,13 @@ export const MODEL_LADDER: ModelSpec[] = [
   { id: "HuggingFaceTB/SmolLM2-360M-Instruct", name: "SmolLM2-360M" },
   { id: "HuggingFaceTB/SmolLM2-135M-Instruct", name: "SmolLM2-135M" },
 ];
+
+export const MC_MODEL_LADDER: ModelSpec[] = [
+  { id: "keisuke-miyako/Qwen2.5-7B-Instruct-1M-onnx-int4", name: "Qwen2.5-7B" },
+  { id: "keisuke-miyako/Qwen2.5-3B-Instruct-onnx-int4", name: "Qwen2.5-3B" },
+  { id: "onnx-community/Qwen2.5-1.5B-Instruct", name: "Qwen2.5-1.5B" },
+  { id: "onnx-community/Qwen2.5-0.5B-Instruct", name: "Qwen2.5-0.5B" },
+];
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0";
 
 export type LocalChatMessage = {
@@ -127,11 +134,18 @@ export function localModelSupported(): boolean {
 
 const MODEL_ALIASES: Record<string, number> = { qwen: 0, "360m": 1, "135m": 2 };
 let preferredEffortRung = 0;
+let executionMode: "swarm" | "mc" = "swarm";
 function effortToRung(effort: number): number {
   const n = Math.max(0, Math.min(100, effort));
   if (n <= 10) return 2;
   if (n <= 30) return 1;
   return 0;
+}
+
+export function setModelExecutionMode(mode: "swarm" | "mc"): void {
+  if (executionMode === mode) return;
+  executionMode = mode;
+  if (loading) void resetModel();
 }
 
 export function setModelEffort(effort: number): void {
@@ -140,7 +154,8 @@ export function setModelEffort(effort: number): void {
   try {
     localStorage.setItem("hive-model-effort", String(Math.max(0, Math.min(100, Math.round(effort)))));
   } catch { /* storage can be unavailable in private/browser-restricted contexts */ }
-  const desired = MODEL_LADDER[next].name;
+  const ladder = executionMode === "mc" ? MC_MODEL_LADDER : MODEL_LADDER;
+  const desired = ladder[Math.min(next, ladder.length - 1)].name;
   if (loading && status.model && status.model !== desired) void resetModel();
 }
 
@@ -151,6 +166,10 @@ function storedEffortRung(): number {
   } catch {
     return preferredEffortRung;
   }
+}
+
+function activeModelLadder(): ModelSpec[] {
+  return executionMode === "mc" ? MC_MODEL_LADDER : MODEL_LADDER;
 }
 
 export function effectiveRung(search: string): number {
@@ -178,7 +197,8 @@ export function pickBackends(
     !hasWebGpu && !ios && !forcedModel
       ? 1
       : requestedRung;
-  const model = MODEL_LADDER[wasmRung];
+  const ladder = activeModelLadder();
+  const model = ladder[Math.min(wasmRung, ladder.length - 1)];
   const isQwen = model === MODEL_LADDER[0];
   const forcedDtype = params.get("dtype");
   const dtype: LocalDtype | null =
