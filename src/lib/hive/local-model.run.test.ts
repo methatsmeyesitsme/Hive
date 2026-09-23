@@ -51,8 +51,8 @@ const PAGE = "<!doctype html> <html> <body> hello </body> </html> and then a lot
           await sleep(slowTokens > 0 ? 4 : 0);
           const chunk = (i === 0 ? "" : " ") + words[i];
           out += chunk;
-          opts.streamer?.callback_function?.(chunk);
-          opts.streamer?.token_callback_function?.();
+          opts.streamer?.opts.callback_function?.(chunk);
+          opts.streamer?.opts.token_callback_function?.();
           if (opts.stopping_criteria?.interrupted) break;
         }
         results.push({ generated_text: [...chat, { role: "assistant", content: out }] });
