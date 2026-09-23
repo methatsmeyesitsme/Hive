@@ -216,7 +216,7 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
               className="max-h-40 min-h-10 flex-1 resize-none bg-transparent py-2 text-sm text-fog placeholder:text-dim focus:outline-none"
             />
             {running ? (
-              <Button type="button" variant="danger" size="icon" onClick={cancel} aria-label="Cancel">
+              <Button type="button" variant="danger" size="icon" onClick={() => cancel()} aria-label="Cancel">
                 <Square className="size-3.5 fill-current" />
               </Button>
             ) : (

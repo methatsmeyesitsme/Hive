@@ -225,6 +225,8 @@ export const useHiveStore = create<HiveState>()(
       previewOpen: false,
       previewRunning: false,
       aiAvailable: null,
+      effort: 50,
+      backgroundJobs: {},
 
       projects: [],
       activeProjectId: null,

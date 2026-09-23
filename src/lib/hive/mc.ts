@@ -383,7 +383,14 @@ async function writePage(
     files: [{ path: "index.html", content: html }],
     ready: true,
   };
-  return { ok: true, mcMessage: message, plan, artifact, memory: webMemory(webResults) };
+  return {
+    ok: true,
+    mcMessage: message,
+    projectName: generatedName || brief?.projectName || fallbackProjectName(data.prompt),
+    plan,
+    artifact,
+    memory: webMemory(webResults),
+  };
 }
 
 export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskResult> {

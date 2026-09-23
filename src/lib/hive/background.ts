@@ -21,6 +21,7 @@ export type BackgroundJob = {
   projectId: string;
   status: "queued" | "running" | "complete" | "error" | "cancelled";
   result?: {
+    ok: true;
     projectName: string;
     mcMessage: string;
     plan: {
