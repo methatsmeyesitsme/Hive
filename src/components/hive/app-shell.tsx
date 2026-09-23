@@ -27,6 +27,7 @@ export function AppShell() {
   const setLeftOpenMobile = useHiveStore((s) => s.setLeftOpenMobile);
   const setRightOpenMobile = useHiveStore((s) => s.setRightOpenMobile);
   const checkAi = useHiveStore((s) => s.checkAi);
+  const resumeBackgroundJobs = useHiveStore((s) => s.resumeBackgroundJobs);
   const [narrow, setNarrow] = useState(false);
 
   useEffect(() => {
@@ -47,6 +48,10 @@ export function AppShell() {
   useEffect(() => {
     void checkAi();
   }, [checkAi]);
+
+  useEffect(() => {
+    if (hydrated && sessionName) void resumeBackgroundJobs();
+  }, [hydrated, sessionName, resumeBackgroundJobs]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 900px)");

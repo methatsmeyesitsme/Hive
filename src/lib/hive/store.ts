@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { getAiStatus, runMcTask } from "./mc";
+import { consumeBackgroundJob, enqueueBackgroundJob, getBackgroundJob, listBackgroundJobs, type BackgroundInput } from "./background";
 import {
   connectGithub,
   createGithubRepo,
@@ -52,6 +53,7 @@ type HiveState = {
   previewRunning: boolean;
   aiAvailable: boolean | null;
   effort: number;
+  backgroundJobs: Record<string, string>;
 
   projects: Project[];
   activeProjectId: string | null;
@@ -91,6 +93,7 @@ type HiveState = {
   setPreviewOpen: (open: boolean) => void;
   runPreview: () => void;
   setEffort: (effort: number) => void;
+  resumeBackgroundJobs: () => Promise<void>;
 
   createProject: (name?: string, repoFullName?: string | null) => void;
   selectProject: (id: string) => void;
@@ -135,6 +138,45 @@ const memoryStorage = createJSONStorage<Partial<HiveState>>(() => {
 
 let abortRun: AbortController | null = null;
 const lockMap = new Map<string, { ownerId: string; ownerLabel: string }>();
+
+async function monitorBackgroundJob(
+  jobId: string,
+  projectId: string,
+  set: (fn: any) => void,
+  get: () => HiveState,
+): Promise<void> {
+  for (let attempt = 0; attempt < 720; attempt++) {
+    const job = await getBackgroundJob(jobId);
+    if (job?.status === "complete" && job.result?.ok) {
+      const result = job.result;
+      const mcMsg: ChatMessage = { id: nid("msg"), role: "mc", content: result.mcMessage, createdAt: Date.now(), hasArtifact: Boolean(result.artifact) };
+      set((s: HiveState) => ({
+        projects: s.projects.map((p) => p.id === projectId ? {
+          ...p,
+          name: p.name === "New Project" ? result.projectName.slice(0, 48) : p.name,
+          messages: [...p.messages, mcMsg],
+          artifact: result.artifact,
+          updatedAt: Date.now(),
+        } : p),
+        phase: "complete",
+        status: idleStatus,
+        backgroundJobs: Object.fromEntries(Object.entries(s.backgroundJobs).filter(([, id]) => id !== jobId)),
+      }));
+      await consumeBackgroundJob(jobId);
+      return;
+    }
+    if (job?.status === "error" || job?.status === "cancelled") {
+      set((s: HiveState) => ({
+        phase: "error",
+        status: { mc: job.error || "Background Hive could not finish the job.", hrc: "Standing by", ro: "Standing by" },
+        backgroundJobs: Object.fromEntries(Object.entries(s.backgroundJobs).filter(([, id]) => id !== jobId)),
+      }));
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
 
 function audit(actor: string, action: string): AuditEvent {
   return { id: nid("aud"), at: Date.now(), actor, action };
@@ -257,6 +299,26 @@ export const useHiveStore = create<HiveState>()(
       setPreviewOpen: (open) => set({ previewOpen: open }),
       runPreview: () => set({ previewRunning: true, previewOpen: true }),
       setEffort: (effort) => set({ effort: Math.max(0, Math.min(100, Math.round(effort))) }),
+
+      resumeBackgroundJobs: async () => {
+        const jobs = await listBackgroundJobs();
+        const projectsById = new Set(get().projects.map((p) => p.id));
+        for (const job of jobs) {
+          if (!projectsById.has(job.projectId)) continue;
+          if (job.status === "complete" && job.result?.ok) {
+            const project = get().projects.find((p) => p.id === job.projectId);
+            if (!project) continue;
+            const result = job.result;
+            const mcMsg: ChatMessage = { id: nid("msg"), role: "mc", content: result.mcMessage, createdAt: Date.now(), hasArtifact: Boolean(result.artifact) };
+            set((s) => ({ projects: s.projects.map((p) => p.id === job.projectId ? { ...p, name: p.name === "New Project" ? result.projectName.slice(0, 48) : p.name, messages: [...p.messages, mcMsg], artifact: result.artifact, updatedAt: Date.now() } : p), backgroundJobs: Object.fromEntries(Object.entries(s.backgroundJobs).filter(([, id]) => id !== job.id)), phase: "complete", status: idleStatus }));
+            await consumeBackgroundJob(job.id);
+          } else if (job.status === "queued" || job.status === "running") {
+            set({ backgroundJobs: { ...get().backgroundJobs, [job.projectId]: job.id }, phase: "working", status: { mc: "Background Hive is working", hrc: "Server worker running", ro: "Standing by" } });
+            void monitorBackgroundJob(job.id, job.projectId, set, get);
+            break;
+          }
+        }
+      },
 
       createProject: (name, repoFullName) => {
         abortRun?.abort();
@@ -391,6 +453,41 @@ export const useHiveStore = create<HiveState>()(
           updatedAt: Date.now(),
           artifact: p.artifact ? { ...p.artifact, ready: false } : p.artifact,
         }));
+
+        const backgroundInput: BackgroundInput = {
+          projectId: project.id,
+          prompt,
+          history,
+          attachments: attachments.map((a) => ({
+            name: a.name,
+            mime: a.mime,
+            kind: a.kind,
+            textExcerpt: a.textExcerpt,
+          })),
+          memory: get().memories.slice(0, 12).map((m) => ({ title: m.title, content: m.content })),
+          currentHtml: project.artifact?.html ?? null,
+          projectName: project.name,
+          effort,
+        };
+        const background = await enqueueBackgroundJob(backgroundInput);
+        if (background.ok) {
+          abortRun = null;
+          set({
+            phase: "working",
+            backgroundJobs: { ...get().backgroundJobs, [project.id]: background.jobId },
+            status: {
+              mc: "Running in background — safe to close Hive",
+              hrc: "Server worker running",
+              ro: "Standing by",
+            },
+            lieutenants: [],
+            splitters: [],
+            agentTotal: 0,
+            fileLocks: [],
+          });
+          void monitorBackgroundJob(background.jobId, project.id, set, get);
+          return;
+        }
 
         const provisional = estimateSwarm(prompt);
         set({
@@ -1076,6 +1173,7 @@ export const useHiveStore = create<HiveState>()(
           githubUsername: s.githubUsername,
           githubRepo: s.githubRepo,
           effort: s.effort,
+          backgroundJobs: s.backgroundJobs,
         }) as unknown as HiveState,
       onRehydrateStorage: () => () => {
         useHiveStore.setState({
