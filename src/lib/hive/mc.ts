@@ -77,7 +77,8 @@ Use concise inline CSS and JavaScript only when needed. No libraries, network re
 Keep it distinctive, polished, and complete. Output only the two header lines and the page.`;
 
 const APP_SYSTEM = `You are MC, Hive's interactive web builder.
-Start with exactly one line:
+Start with exactly two lines:
+NAME: <1 to 4 descriptive words based on the human request>
 REPLY: <one short sentence>
 Then output ONE complete self-contained HTML5 page beginning with <!doctype html>.
 Build the requested interaction from scratch. Never use a premade app template or canned widget.
@@ -86,6 +87,39 @@ Output only the reply line and page.`;
 
 function clip(text: string, n: number): string {
   return text.length > n ? `${text.slice(0, n)}…` : text;
+}
+
+function normalizeProjectName(value: string): string {
+  const cleaned = value
+    .replace(/^\s*(?:NAME\s*:\s*)?/i, "")
+    .replace(/^[\s"'*_>#-]+|[\s"'*_]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned || /^(new project|untitled project|project|website)$/i.test(cleaned)) return "";
+  return cleaned.split(/\s+/).filter(Boolean).slice(0, 4).join(" ").slice(0, 48);
+}
+
+function fallbackProjectName(prompt: string): string {
+  const noise = new Set([
+    "a","an","the","make","build","create","design","please","me","my","for","with",
+    "website","web","page","site","app","tool","thing","something","add","change",
+    "update","fix","new","project","interactive"
+  ]);
+  const words = prompt
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((word) => !noise.has(word.toLowerCase()));
+  const named = words
+    .slice(0, 4)
+    .map((word) => word.length ? word[0].toUpperCase() + word.slice(1) : word)
+    .join(" ");
+  return normalizeProjectName(named) || "New Project";
+}
+
+function projectNameFromText(text: string, prompt: string): string {
+  const named = text.match(/^\s*NAME\s*:\s*(.+)$/im)?.[1] ?? "";
+  return normalizeProjectName(named) || fallbackProjectName(prompt);
 }
 
 function attachmentNotes(data: RunInput): string {
@@ -277,8 +311,7 @@ async function writePage(
     lieutenants: buildPlan(true),
   };
 
-  const generatedName = (out.text.match(/^\s*NAME\s*:\s*(.+)$/im)?.[1] ?? "")
-    .trim().split(/\s+/).filter(Boolean).slice(0, 4).join(" ").slice(0, 48);
+  const generatedName = projectNameFromText(out.text, data.prompt);
   let extracted = extractHtml(out.text);
   let html = extracted ? polishHtml(extracted) : null;
   if (!html || !isUsablePage(html)) {

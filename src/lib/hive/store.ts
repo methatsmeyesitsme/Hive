@@ -153,7 +153,7 @@ async function monitorBackgroundJob(
       set((s: HiveState) => ({
         projects: s.projects.map((p) => p.id === projectId ? {
           ...p,
-          name: p.name === "New Project" ? result.projectName.slice(0, 48) : p.name,
+          name: p.name === "New Project" || p.name === "Untitled project" ? result.projectName.slice(0, 48) : p.name,
           messages: [...p.messages, mcMsg],
           artifact: result.artifact,
           updatedAt: Date.now(),
@@ -454,6 +454,14 @@ export const useHiveStore = create<HiveState>()(
           artifact: p.artifact ? { ...p.artifact, ready: false } : p.artifact,
         }));
 
+
+        const history = project.messages
+          .filter((m) => m.role === "user" || m.role === "mc")
+          .map((m) => ({
+            role: m.role === "mc" ? ("mc" as const) : ("user" as const),
+            content: m.content,
+          }));
+
         const backgroundInput: BackgroundInput = {
           projectId: project.id,
           prompt,
@@ -508,13 +516,6 @@ export const useHiveStore = create<HiveState>()(
             audit("MC", "Received the human’s original request"),
           ]),
         });
-
-        const history = project.messages
-          .filter((m) => m.role === "user" || m.role === "mc")
-          .map((m) => ({
-            role: m.role === "mc" ? ("mc" as const) : ("user" as const),
-            content: m.content,
-          }));
 
         const apiPromise = runMcTask({
           data: {

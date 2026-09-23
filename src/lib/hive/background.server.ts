@@ -29,10 +29,41 @@ Create the requested website or interactive app from scratch.
 Never use a premade website template, canned layout, stock section order, lorem ipsum, or generic filler.
 Respect the human's exact request. Make interactions actually work.
 Return exactly:
+NAME: <1 to 4 descriptive words based on the human request>
 REPLY: <one short sentence>
 Then one complete self-contained HTML5 document beginning with <!doctype html>.
 Use inline CSS and plain JavaScript only. No external libraries or network requests.
 Do not explain the code outside the reply line and HTML.`;
+
+function normalizeProjectName(value: string): string {
+  const cleaned = value
+    .replace(/^\s*(?:NAME\s*:\s*)?/i, "")
+    .replace(/^[\s"'*_>#-]+|[\s"'*_]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned || /^(new project|untitled project|project|website)$/i.test(cleaned)) return "";
+  return cleaned.split(/\s+/).filter(Boolean).slice(0, 4).join(" ").slice(0, 48);
+}
+
+function fallbackProjectName(prompt: string): string {
+  const noise = new Set([
+    "a","an","the","make","build","create","design","please","me","my","for","with",
+    "website","web","page","site","app","tool","thing","something","add","change",
+    "update","fix","new","project","interactive"
+  ]);
+  const words = prompt.replace(/[^a-zA-Z0-9]+/g, " ").split(/\s+/)
+    .filter(Boolean)
+    .filter((word) => !noise.has(word.toLowerCase()));
+  const named = words.slice(0, 4)
+    .map((word) => word.length ? word[0].toUpperCase() + word.slice(1) : word)
+    .join(" ");
+  return normalizeProjectName(named) || "New Project";
+}
+
+function projectNameFromText(text: string, prompt: string): string {
+  const named = text.match(/^\s*NAME\s*:\s*(.+)$/im)?.[1] ?? "";
+  return normalizeProjectName(named) || fallbackProjectName(prompt);
+}
 
 function modelTokens(effort: number): number {
   const n = Math.max(0, Math.min(100, effort));
@@ -124,7 +155,7 @@ async function processJob(id: string, input: BackgroundInput, userId: string): P
     const result: McTaskResult & { ok: true } = {
       ok: true,
       mcMessage: replyLine(content) || "Hive finished the requested work in the background.",
-      projectName: pageTitle(html, input.projectName || "Hive result"),
+      projectName: projectNameFromText(content, input.prompt),
       plan,
       artifact: {
         title: pageTitle(html, input.projectName || "Hive result"),
