@@ -286,51 +286,56 @@ async function runRealAgents(data: RunInput, app: boolean, webResults: WebSearch
 
   data.onProgress?.({
     label:
-      "HRC activated " + splitters.length + " real Splitter context" +
-      (splitters.length === 1 ? "" : "s") + " and " +
-      assignments.length + " real agent" + (assignments.length === 1 ? "" : "s"),
+      "HRC activated " +
+      splitters.length +
+      " real Splitter context" +
+      (splitters.length === 1 ? "" : "s") +
+      " and " +
+      assignments.length +
+      " real agent" +
+      (assignments.length === 1 ? "" : "s"),
     tokens: 0,
   });
 
-  const agentResults: AgentResult[] = [];
-  for (let i = 0; i < assignments.length; i += 4) {
-    const group = assignments.slice(i, i + 4);
-    const outputs = await generateChatParallel(
-      group.map((item) => ({
-        messages: [
-          {
-            role: "system" as const,
-            content: [
-              "You are real Agent " + item.agentId + " inside Splitter " + item.splitterId + ", reporting to Lieutenant " + item.liLetter + ".",
-              "Exact assignment: " + item.assignment,
-              "Owned files: " + (item.ownedFiles.join(", ") || "(none assigned)") + ".",
-              "Work independently. Return concrete implementation work for your Li.",
-              "Give exact file-specific changes, logic, code decisions, edge cases, or fixes.",
-              "Do not act as MC, HRC, RO, another Li, another Agent, or a Splitter.",
-              "Do not browse the web or access GitHub.",
-              web,
-            ].filter(Boolean).join("\n\n"),
-          },
-          {
-            role: "user" as const,
-            content: "Project: " + data.projectName + "\nHuman request: " + data.prompt,
-          },
-        ] satisfies LocalChatMessage[],
-      })),
-      {
-        maxNewTokens: Math.max(72, Math.round(72 + data.effort * 0.32)),
-        label: "real agents",
-        signal: data.signal,
-      },
-    );
+  // Stage 1: all Agents think in one batched model call.
+  const agentOutputs = assignments.length
+    ? await generateChatParallel(
+        assignments.map((item) => ({
+          messages: [
+            {
+              role: "system" as const,
+              content: [
+                "You are real Agent " + item.agentId + " inside Splitter " + item.splitterId + ", reporting to Lieutenant " + item.liLetter + ".",
+                "Exact assignment: " + item.assignment,
+                "Owned files: " + (item.ownedFiles.join(", ") || "(none assigned)") + ".",
+                "Work independently. Return concrete implementation work for your Li.",
+                "Give exact file-specific changes, logic, code decisions, edge cases, or fixes.",
+                "Do not act as MC, HRC, RO, another Li, another Agent, or a Splitter.",
+                "Do not browse the web or access GitHub.",
+                web,
+              ].filter(Boolean).join("\n\n"),
+            },
+            {
+              role: "user" as const,
+              content: "Project: " + data.projectName + "\nHuman request: " + data.prompt,
+            },
+          ] satisfies LocalChatMessage[],
+        })),
+        {
+          maxNewTokens: Math.max(56, Math.round(56 + data.effort * 0.22)),
+          label: "real agents batch",
+          signal: data.signal,
+        },
+      )
+    : [];
 
-    outputs.forEach((output, offset) => {
-      const item = group[offset];
-      agentResults.push({ ...item, output: output.text });
-      data.onProgress?.({ label: "Agent " + item.agentId + " completed real work", tokens: 0 });
-    });
-  }
+  const agentResults: AgentResult[] = agentOutputs.map((output, i) => {
+    const item = assignments[i];
+    data.onProgress?.({ label: "Agent " + item.agentId + " completed", tokens: 0 });
+    return { ...item, output: output.text };
+  });
 
+  // Stage 2: every Li compiles its Agents in one batched model call.
   const agentsByLi = new Map<string, AgentResult[]>();
   for (const result of agentResults) {
     const key = result.splitterId + ":" + result.liLetter;
@@ -339,99 +344,120 @@ async function runRealAgents(data: RunInput, app: boolean, webResults: WebSearch
     agentsByLi.set(key, list);
   }
 
-  const liReports: Array<{ splitterId: string; liLetter: string; report: string }> = [];
-  for (const splitter of splitters) {
-    for (const li of splitter.lieutenants) {
-      const agents = agentsByLi.get(splitter.id + ":" + li.letter) ?? [];
-      const source = agents
-        .map((agent) => "Agent " + agent.agentId + " work:\n" + agent.output.slice(0, 1800))
-        .join("\n\n");
+  const liAssignments = splitters.flatMap((splitter) =>
+    splitter.lieutenants.map((li) => ({
+      splitterId: splitter.id,
+      liLetter: li.letter,
+      objective: li.objective,
+      agents: agentsByLi.get(splitter.id + ":" + li.letter) ?? [],
+    })),
+  );
 
-      const out = await generateChat(
-        [
-          {
-            role: "system",
-            content: [
-              "You are real Lieutenant " + li.letter + " inside Splitter " + splitter.id + ".",
-              "Objective: " + li.objective,
-              "You have " + agents.length + " real Agent report" + (agents.length === 1 ? "" : "s") + ".",
-              "Review the Agents' work, resolve conflicts, verify completeness, and compile one actionable implementation report for your Splitter.",
-              "Do not claim to be MC, HRC, RO, or an Agent. Do not browse or access GitHub.",
-            ].join("\n"),
-          },
-          {
-            role: "user",
-            content: [
-              "Project: " + data.projectName,
-              "Human request: " + data.prompt,
-              web,
-              source || "No Agent report was returned.",
-            ].filter(Boolean).join("\n\n"),
-          },
-        ],
+  const liReports = liAssignments.length
+    ? await generateChatParallel(
+        liAssignments.map((li) => {
+          const source = li.agents
+            .map((agent) => "Agent " + agent.agentId + " work:\n" + agent.output.slice(0, 1400))
+            .join("\n\n");
+          return {
+            messages: [
+              {
+                role: "system" as const,
+                content: [
+                  "You are real Lieutenant " + li.liLetter + " inside Splitter " + li.splitterId + ".",
+                  "Objective: " + li.objective,
+                  "You have " + li.agents.length + " real Agent report" + (li.agents.length === 1 ? "" : "s") + ".",
+                  "Review, correct, and compile their work into one actionable implementation report for your Splitter.",
+                  "Be concise: preserve decisions and important technical details; remove repetition.",
+                  "Do not claim to be MC, HRC, RO, or an Agent. Do not browse or access GitHub.",
+                ].join("\n"),
+              },
+              {
+                role: "user" as const,
+                content: [
+                  "Project: " + data.projectName,
+                  "Human request: " + data.prompt,
+                  web,
+                  source || "No Agent report was returned.",
+                ].filter(Boolean).join("\n\n"),
+              },
+            ] satisfies LocalChatMessage[],
+          };
+        }),
         {
-          maxNewTokens: Math.max(96, Math.round(96 + data.effort * 0.35)),
-          temperature: 0.25,
-          label: "Li " + li.letter,
+          maxNewTokens: Math.max(72, Math.round(72 + data.effort * 0.24)),
+          label: "real Li batch",
           signal: data.signal,
         },
-      );
+      )
+    : [];
 
-      liReports.push({ splitterId: splitter.id, liLetter: li.letter, report: out.text });
-      data.onProgress?.({ label: "Li " + li.letter + " completed real compilation", tokens: 0 });
-    }
-  }
+  liReports.forEach((_, i) => {
+    const li = liAssignments[i];
+    data.onProgress?.({ label: "Li " + li.liLetter + " completed", tokens: 0 });
+  });
 
-  const reportsBySplitter = new Map<string, typeof liReports>();
-  for (const report of liReports) {
-    const list = reportsBySplitter.get(report.splitterId) ?? [];
-    list.push(report);
-    reportsBySplitter.set(report.splitterId, list);
-  }
+  // Stage 3: every Splitter reconciles its LIs in one batched model call.
+  const reportsBySplitter = new Map<string, Array<{ liLetter: string; report: string }>>();
+  liReports.forEach((output, i) => {
+    const li = liAssignments[i];
+    const list = reportsBySplitter.get(li.splitterId) ?? [];
+    list.push({ liLetter: li.liLetter, report: output.text });
+    reportsBySplitter.set(li.splitterId, list);
+  });
 
-  const splitterReports: string[] = [];
-  for (const splitter of splitters) {
-    const reports = reportsBySplitter.get(splitter.id) ?? [];
-    const source = reports
-      .map((report) => "Li " + report.liLetter + " report:\n" + report.report.slice(0, 2200))
-      .join("\n\n");
-
-    const out = await generateChat(
-      [
+  const splitterOutputs = splitters.length
+    ? await generateChatParallel(
+        splitters.map((splitter) => {
+          const reports = reportsBySplitter.get(splitter.id) ?? [];
+          const source = reports
+            .map((report) => "Li " + report.liLetter + " report:\n" + report.report.slice(0, 1600))
+            .join("\n\n");
+          return {
+            messages: [
+              {
+                role: "system" as const,
+                content: [
+                  "You are real Splitter " + splitter.id + ".",
+                  "Coordinate " + reports.length + " independent Li context" + (reports.length === 1 ? "" : "s") + ".",
+                  "Reconcile their reports into one concise, technically coherent implementation package for MC.",
+                  "Preserve useful work, resolve contradictions, and identify integration requirements.",
+                  "Return only the implementation package; remove repetition.",
+                  "Do not claim to be MC, HRC, RO, a Li, or an Agent. Do not browse or access GitHub.",
+                ].join("\n"),
+              },
+              {
+                role: "user" as const,
+                content: [
+                  "Project: " + data.projectName,
+                  "Human request: " + data.prompt,
+                  web,
+                  source || "No Li report was returned.",
+                ].filter(Boolean).join("\n\n"),
+              },
+            ] satisfies LocalChatMessage[],
+          };
+        }),
         {
-          role: "system",
-          content: [
-            "You are real Splitter " + splitter.id + ".",
-            "Coordinate " + reports.length + " independent Li context" + (reports.length === 1 ? "" : "s") + ".",
-            "Reconcile their reports into one technically coherent implementation package for MC.",
-            "Preserve useful work, resolve contradictions, and identify integration requirements.",
-            "Do not claim to be MC, HRC, RO, a Li, or an Agent. Do not browse or access GitHub.",
-          ].join("\n"),
+          maxNewTokens: Math.max(88, Math.round(88 + data.effort * 0.26)),
+          label: "real Splitter batch",
+          signal: data.signal,
         },
-        {
-          role: "user",
-          content: [
-            "Project: " + data.projectName,
-            "Human request: " + data.prompt,
-            web,
-            source || "No Li report was returned.",
-          ].filter(Boolean).join("\n\n"),
-        },
-      ],
-      {
-        maxNewTokens: Math.max(120, Math.round(120 + data.effort * 0.38)),
-        temperature: 0.2,
-        label: splitter.id,
-        signal: data.signal,
-      },
-    );
+      )
+    : [];
 
-    splitterReports.push("Splitter " + splitter.id + " compiled swarm work:\n" + out.text);
-    data.onProgress?.({ label: splitter.id + " completed real compilation", tokens: 0 });
-  }
+  splitterOutputs.forEach((_, i) => {
+    data.onProgress?.({ label: splitters[i].id + " completed", tokens: 0 });
+  });
 
-  data.onProgress?.({ label: "All real Splitters returned compiled work to MC", tokens: 0 });
-  return splitterReports;
+  data.onProgress?.({
+    label: "Agents, LIs, and Splitters finished in batched stages; MC is integrating",
+    tokens: 0,
+  });
+
+  return splitterOutputs.map((output, i) =>
+    "Splitter " + splitters[i].id + " compiled swarm work:\n" + output.text,
+  );
 }
 
 type Brief = ReturnType<typeof parseBrief>;
