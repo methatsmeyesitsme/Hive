@@ -44,10 +44,16 @@ describe("parseBrief", () => {
 });
 
 describe("buildPlan", () => {
-  it("uses real agent counts for builds and no phantom agents for direct answers", () => {
+  it("uses real agent counts for substantive builds and no phantom agents for direct answers", () => {
     const build = buildPlan(true);
     assert.deepEqual(build.map((p) => p.agentCount), [1, 1]);
     assert.equal(buildPlan(false).length, 0);
+  });
+
+  it("skips the agent pass for tiny builds so MC can answer them directly", () => {
+    const prompt = "make a website that says hi and when i click it it changes to howdy, hello, hola, welcome, etc. in the bottom in light gray transparent text write Click Anywhere";
+    assert.equal(needsAgentPass(prompt), false);
+    assert.equal(buildPlan(true, prompt).length, 0);
   });
 });
 
@@ -162,7 +168,12 @@ describe("isUsablePage for small apps", () => {
       false,
     );
   });
-  it("rejects a tiny static page with no script", () => {
+  it("accepts a tiny interactive page even when the model uses an inline handler", () => {
+    const page = "<!doctype html><html><body><h1 id='g'>Hi</h1><div onclick=\"document.getElementById('g').textContent='Howdy'\">Click Anywhere</div></body></html>";
+    assert.equal(isUsablePage(page), true);
+  });
+
+  it("rejects a tiny static page with no interaction", () => {
     assert.equal(isUsablePage("<!doctype html><html><body><h1>Hello there</h1></body></html>"), false);
   });
   it("the repaired output of a cut-off script is not treated as a working app", () => {

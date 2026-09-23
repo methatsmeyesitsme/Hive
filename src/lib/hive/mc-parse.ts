@@ -40,6 +40,17 @@ const APP_WORDS =
 const SITE_WORDS =
   /\b(landing|website|web ?site|homepage|home page|portfolio|blog|store|shop|restaurant|agency|studio|company|business|newsletter)\b/i;
 
+const COMPLEX_BUILD_WORDS =
+  /\b(dashboard|e-?commerce|checkout|authentication|auth|login|signup|database|backend|api|multi-?page|multiple pages|real-?time|payments?|accounts?|upload|gallery|search|filter|sorting|drag(?:-and)?-drop)\b/i;
+
+/** Tiny, tightly-scoped builds do not need a separate agent pass; MC can build them directly. */
+export function needsAgentPass(prompt: string): boolean {
+  const normalized = prompt.trim();
+  if (!normalized) return false;
+  const words = normalized.split(/\s+/).filter(Boolean).length;
+  return words > 28 || normalized.length > 220 || COMPLEX_BUILD_WORDS.test(normalized);
+}
+
 const WEB_RESEARCH_WORDS =
   /\b(search (?:the )?(?:web|internet|online)|web search|search online|look up online|research online|research (?:this|that|the latest)|latest news|latest updates|what(?:'s| is) new|today(?:'s|s)|current (?:news|status|version|price|events?|information)|right now)\b/i;
 
@@ -88,8 +99,8 @@ export function parseBrief(text: string, prompt: string): Brief {
   };
 }
 
-export function buildPlan(build: boolean): LieutenantPlan[] {
-  if (!build) {
+export function buildPlan(build: boolean, prompt?: string): LieutenantPlan[] {
+  if (!build || (prompt && !needsAgentPass(prompt))) {
     return [];
   }
   return [
@@ -160,9 +171,11 @@ export function isUsablePage(html: string): boolean {
   if (visibleText(body).length >= 80) return true;
   // A small app (a clock, a counter) has little text of its own: the script fills it in.
   // Accept it when it carries a finished script and some real markup to put things in.
-  const hasScript = /<script[\s>][\s\S]{30,}?<\/script\s*>/i.test(body);
+  const hasScript = /<script[\s>][\s\S]{20,}?<\/script\s*>/i.test(body);
+  const hasInlineInteraction =
+    /\bon(?:click|pointerdown|pointerup|change|input|submit)\s*=|addEventListener\s*\(/i.test(body);
   const markup = body.replace(/<script[\s\S]*?<\/script\s*>/gi, "").trim();
-  return hasScript && markup.length >= 20;
+  return (hasScript || hasInlineInteraction) && markup.length >= 20;
 }
 
 const BASE_CSS =

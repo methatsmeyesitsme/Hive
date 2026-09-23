@@ -535,7 +535,7 @@ export const useHiveStore = create<HiveState>()(
           return;
         }
 
-        const provisional = looksLikeBuild(prompt) ? buildPlan(true) : buildPlan(false);
+        const provisional = looksLikeBuild(prompt) ? buildPlan(true, prompt) : buildPlan(false);
         set({
           status: {
             mc: "Planning the requested changes",

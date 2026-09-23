@@ -18,6 +18,7 @@ import {
   polishHtml,
   replyLine,
   needsWebResearch,
+  needsAgentPass,
 } from "./mc-parse";
 import { perf } from "./perf";
 import { searchWeb, type WebSearchResult } from "./web-search";
@@ -250,6 +251,13 @@ function pageBudget(device: "webgpu" | "wasm", app = false, effort = 50): number
 }
 
 async function runRealAgents(data: RunInput, app: boolean, webResults: WebSearchResult[] = []): Promise<string[]> {
+  // Very small builds are handled directly by MC. This keeps tiny requests fast while
+  // preserving the independent-agent pass for substantive builds.
+  if (!needsAgentPass(data.prompt)) {
+    data.onProgress?.({ label: "simple build; MC working directly", tokens: 0 });
+    return [];
+  }
+
   const assignments = [
     {
       splitter: "S1",
@@ -304,7 +312,7 @@ async function repairPage(data: RunInput, raw: string): Promise<string | null> {
   try {
     const repaired = await generateChat(
       [
-        { role: "system", content: "You are an HTML repair agent. Return only one complete self-contained HTML5 page. Preserve the request and current design. Finish or correct the partial page; do not explain." },
+        { role: "system", content: "You are an HTML repair agent. Return only one complete self-contained HTML5 page. Preserve the request and current design. Never use a premade website/app template, canned section layout, or stock copy. Finish or correct the partial page; do not explain." },
         { role: "user", content: `Human request: ${data.prompt}\nPartial page:\n${clip(raw, 7000)}` },
       ],
       {
@@ -349,7 +357,7 @@ async function writePage(
     strategy: brief?.strategy ?? "Write the whole page in one pass.",
     researchNeeded: webResults.length > 0,
     researchTopic: webResults.length > 0 ? data.prompt.slice(0, 240) : "",
-    lieutenants: buildPlan(true),
+    lieutenants: buildPlan(true, data.prompt),
   };
 
   const generatedName = projectNameFromText(out.text, data.prompt);

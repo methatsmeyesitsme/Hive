@@ -46,6 +46,13 @@ export type BackgroundJob = {
 
 const URL = "/api/hive/background";
 
+function backgroundServerLikelyAvailable(): boolean {
+  if (typeof location === "undefined") return true;
+  const host = location.hostname.toLowerCase();
+  // GitHub Pages is static hosting, so there is no /api route to wait on.
+  return !host.endsWith(".github.io") && host !== "github.io";
+}
+
 async function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit = {},
@@ -64,6 +71,9 @@ export async function enqueueBackgroundJob(input: BackgroundInput): Promise<
   | { ok: true; jobId: string }
   | { ok: false; unavailable: boolean; error?: string }
 > {
+  if (!backgroundServerLikelyAvailable()) {
+    return { ok: false, unavailable: true };
+  }
   try {
     const compact = {
       ...input,
