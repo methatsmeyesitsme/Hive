@@ -425,6 +425,69 @@ export function startModelPreload(): void {
   if (new URLSearchParams(location.search).get("preload") === "off") return;
   void warmModelIfCached();
 }
+export type ParallelGenerateRequest = {
+  messages: LocalChatMessage[];
+  maxNewTokens?: number;
+};
+
+export async function generateChatParallel(
+  requests: ParallelGenerateRequest[],
+  options: {
+    maxNewTokens: number;
+    label?: string;
+    signal?: AbortSignal;
+  },
+): Promise<Array<{ text: string; device: LocalDevice }>> {
+  if (requests.length === 0) return [];
+
+  const generateBatchOnce = async ({ generator, device, label }: Loaded) => {
+    if (options.signal?.aborted) throw new GenerationCancelled();
+    setBreadcrumb(`parallel ${options.label ?? "agent"} thinking`, label);
+    const maxNew = options.maxNewTokens;
+    const batchInput = requests.map((request) => request.messages);
+    const batchGenerator = generator as unknown as (
+      messages: LocalChatMessage[][],
+      callOptions: Record<string, unknown>,
+    ) => Promise<Array<{ generated_text: LocalChatMessage[] | string }>>;
+    const out = await batchGenerator(batchInput, {
+      max_new_tokens: maxNew,
+      do_sample: false,
+    });
+    if (options.signal?.aborted) throw new GenerationCancelled();
+
+    return out.map((item) => {
+      const generated = item?.generated_text;
+      if (Array.isArray(generated)) {
+        return {
+          text: generated.at(-1)?.content ?? "",
+          device,
+        };
+      }
+      return { text: typeof generated === "string" ? generated : "", device };
+    });
+  };
+
+  const run = async () => {
+    let failures = 0;
+    for (;;) {
+      const loaded = await loadModel();
+      try {
+        return await generateBatchOnce(loaded);
+      } catch (err) {
+        if (failures >= WEBGPU_FAIL_LIMIT || !isRuntimeFailure(err)) throw err;
+        failures += 1;
+        perf.recovery();
+        if (loaded.device === "webgpu") avoidWebGpu = true;
+        await resetModel();
+      }
+    }
+  };
+
+  const next = queue.then(run, run);
+  queue = next.catch(() => undefined);
+  return next;
+}
+
 export function generateChat(messages: LocalChatMessage[], options: GenerateOptions): Promise<{ text: string; device: LocalDevice }> {
   const generateOnce = async ({ generator, device, label, mod }: Loaded) => {
     if (options.signal?.aborted) throw new GenerationCancelled();
