@@ -16,6 +16,7 @@ import {
   describeModelStatus,
   getModelStatus,
   releaseModelIfWorn,
+  setModelEffort,
   subscribeModelStatus,
   type ModelStatus,
 } from "./local-model";
@@ -346,6 +347,7 @@ export const useHiveStore = create<HiveState>()(
 
       send: async (text, attachments, requestedEffort) => {
         const effort = Math.max(0, Math.min(100, Math.round(requestedEffort ?? get().effort)));
+        setModelEffort(effort);
         const prompt = text.trim();
         if (!prompt && attachments.length === 0) return;
         const state = get();
@@ -634,7 +636,7 @@ export const useHiveStore = create<HiveState>()(
             fileLocks: visibleLocks,
             status: {
               ...get().status,
-              hrc: `Managing ${agentTotal} active agents`,
+              hrc: `Managing ${agentTotal} agent contexts`,
             },
             audits: logAudits(get().audits, [
               audit("HRC", `Summoned ${summoned.length} Li and initialized ${agentTotal} logical agents`),
@@ -728,7 +730,7 @@ export const useHiveStore = create<HiveState>()(
               phase: "researching",
               status: {
                 mc: "Distributing RO findings",
-                hrc: `Managing ${liveTotal} active agents`,
+                hrc: `Managing ${liveTotal} independent agent contexts`,
                 ro: `Researching ${result.plan.researchTopic || "the open web"}`,
               },
               audits: logAudits(get().audits, [
@@ -743,7 +745,7 @@ export const useHiveStore = create<HiveState>()(
           set({
             phase: "working",
             status: {
-              mc: "Agents implementing assigned work",
+              mc: "MC integrating work from independent agents",
               hrc: `Managing ${liveTotal} active agents`,
               ro: "Standing by",
             },

@@ -126,12 +126,38 @@ export function localModelSupported(): boolean {
 }
 
 const MODEL_ALIASES: Record<string, number> = { qwen: 0, "360m": 1, "135m": 2 };
+let preferredEffortRung = 1;
+
+function effortToRung(effort: number): number {
+  const n = Math.max(0, Math.min(100, effort));
+  if (n <= 30) return 2;
+  if (n <= 70) return 1;
+  return 0;
+}
+
+export function setModelEffort(effort: number): void {
+  const next = effortToRung(effort);
+  preferredEffortRung = next;
+  try {
+    localStorage.setItem("hive-model-effort", String(Math.max(0, Math.min(100, Math.round(effort)))));
+  } catch {}
+  const desired = MODEL_LADDER[next].name;
+  if (loading && status.model && status.model !== desired) void resetModel();
+}
+
+function storedEffortRung(): number {
+  try {
+    const raw = Number(localStorage.getItem("hive-model-effort"));
+    return Number.isFinite(raw) ? effortToRung(raw) : preferredEffortRung;
+  } catch {
+    return preferredEffortRung;
+  }
+}
 
 export function effectiveRung(search: string): number {
   const forced = new URLSearchParams(search).get("model");
-  return forced && forced in MODEL_ALIASES ? MODEL_ALIASES[forced] : 0;
+  return forced && forced in MODEL_ALIASES ? MODEL_ALIASES[forced] : storedEffortRung();
 }
-
 /**
  * Return the backend ladder. A WebGPU adapter's maxStorageBufferBindingSize is
  * checked before pipeline creation so an oversized model is never handed to
@@ -287,7 +313,7 @@ function backendLabel({ device, dtype, model }: LocalBackend): string {
 }
 
 let runsSinceLoad = 0;
-const WORN_AFTER_RUNS = 32;
+const WORN_AFTER_RUNS = 64;
 type Loaded = { generator: Generator; device: LocalDevice; label: string; mod: TransformersModule };
 let loading: Promise<Loaded> | null = null;
 
@@ -422,7 +448,7 @@ async function resetModel(): Promise<void> {
       const loaded = await old;
       await Promise.race([Promise.resolve(loaded?.generator.dispose?.()), new Promise((resolve) => setTimeout(resolve, 700))]);
     } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 10));
   })();
   try { await resetInFlight; } finally { resetInFlight = null; }
 }

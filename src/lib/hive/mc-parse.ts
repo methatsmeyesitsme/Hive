@@ -36,7 +36,7 @@ export function looksLikeBuild(prompt: string): boolean {
 }
 
 const APP_WORDS =
-  /\b(app|apps|tool|calculator|clock|timer|stopwatch|countdown|counter|game|tracker|converter|to-?do|checklist|quiz|generator|planner|dashboard|widget|notepad|player|simulator|randomi[sz]er)\b/i;
+  /\b(app|apps|tool|calculator|clock|timer|stopwatch|countdown|counter|game|tracker|converter|to-?do|checklist|quiz|generator|planner|dashboard|widget|notepad|player|simulator|randomi[sz]er|interactive|interaction|click|button|toggle|input|form)\b/i;
 const SITE_WORDS =
   /\b(landing|website|web ?site|homepage|home page|portfolio|blog|store|shop|restaurant|agency|studio|company|business|newsletter)\b/i;
 

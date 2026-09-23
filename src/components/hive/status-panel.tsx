@@ -105,7 +105,7 @@ export function StatusPanel({
             <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-dim">
               Splitters
               <span className="ml-2 normal-case tracking-normal text-dim/80">
-                ~{MODEL_CLASS.splitter} · {splitters.length}/{MAX_SPLITTERS}
+                {splitters.length}/{MAX_SPLITTERS} independent agents
               </span>
             </p>
             {splitters.length === 0 ? (
