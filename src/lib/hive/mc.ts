@@ -1,6 +1,7 @@
 import {
   GenerationCancelled,
   generateChat,
+  generateChatParallel,
   getModelStatus,
   isMemoryFailure,
   localModelSupported,
@@ -141,7 +142,11 @@ const APP_STRUCTURE =
 const SITE_STRUCTURE =
   "Structure: header with navigation, a hero with headline and call-to-action button, three or four content sections, and a footer.";
 
-function buildMessages(data: RunInput, revisable: string | null): LocalChatMessage[] {
+function buildMessages(
+  data: RunInput,
+  revisable: string | null,
+  parallelFindings: string[] = [],
+): LocalChatMessage[] {
   const app = looksLikeApp(data.prompt);
   // Keep the prompt short: prefill time grows with every character sent.
   const history = data.history
@@ -153,6 +158,9 @@ function buildMessages(data: RunInput, revisable: string | null): LocalChatMessa
     history ? `Recent conversation:\n${history}` : "",
     attachmentNotes(data),
     `Request: ${data.prompt}`,
+    parallelFindings.length > 0
+      ? `Parallel agent findings:\n${parallelFindings.map((f, i) => `Agent ${i + 1}: ${clip(f, 600)}`).join("\n")}`
+      : "",
     revisable
       ? `Here is the current page. Apply the request to it and return the full updated page:\n${revisable}`
       : app
@@ -182,13 +190,66 @@ function pageBudget(device: "webgpu" | "wasm", app = false): number {
 
 type Brief = ReturnType<typeof parseBrief>;
 
+function needsParallelThinking(prompt: string): boolean {
+  if (prompt.trim().length > 110) return true;
+  return /\b(complex|full|platform|dashboard|store|shop|auth|account|database|multi(?:ple)?|social|game|rebuild|redesign|animation|interactive)\b/i.test(
+    prompt,
+  );
+}
+
+async function parallelAgentThinking(
+  data: RunInput,
+  lieutenants: ReturnType<typeof buildPlan>,
+): Promise<string[]> {
+  if (!needsParallelThinking(data.prompt)) return [];
+
+  const requests = lieutenants.map((li) => ({
+    messages: [
+      {
+        role: "system" as const,
+        content:
+          `You are Lieutenant ${li.letter}'s implementation agent in Hive. Think independently about the user's request. Do not write code. Return 2 to 4 concise implementation decisions, risks, or checks that would help the final builder.`,
+      },
+      {
+        role: "user" as const,
+        content:
+          `Human request: ${data.prompt}\nYour assignment: ${li.objective}\nProject: ${data.projectName}`,
+      },
+    ],
+    maxNewTokens: 64,
+  }));
+
+  const search =
+    typeof location === "undefined" ? "" : location.search;
+  const cores =
+    typeof navigator === "undefined" ? 2 : (navigator.hardwareConcurrency ?? 2);
+  const lowMemory = /(?:^|&)lowmem=on(?:&|$)/i.test(search.slice(1));
+  const width = Math.max(2, Math.min(4, lowMemory ? 2 : Math.floor(Math.max(2, cores) / 2)));
+  const findings: string[] = [];
+
+  for (let i = 0; i < requests.length; i += width) {
+    const batch = requests.slice(i, i + width);
+    const outputs = await generateChatParallel(batch, {
+      maxNewTokens: 64,
+      label: "agents",
+      signal: data.signal,
+    });
+    findings.push(...outputs.map((o) => o.text));
+  }
+  return findings;
+}
+
 /** One model call: a one-line reply, then the page. */
-async function writePage(data: RunInput, brief: Brief | null): Promise<McTaskResult> {
+async function writePage(
+  data: RunInput,
+  brief: Brief | null,
+  parallelFindings: string[] = [],
+): Promise<McTaskResult> {
   const revisable =
     data.currentHtml && data.currentHtml.length <= MAX_REVISABLE_HTML ? data.currentHtml : null;
 
   const tPrep = perf.now();
-  const messages = buildMessages(data, revisable);
+  const messages = buildMessages(data, revisable, parallelFindings);
   perf.prep(perf.now() - tPrep);
 
   const app = looksLikeApp(data.prompt);
@@ -295,7 +356,10 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
 
   try {
     // A clear request for a page: one call, no separate planning step.
-    if (looksLikeBuild(data.prompt)) return await writePage(data, null);
+    if (looksLikeBuild(data.prompt)) {
+      const findings = await parallelAgentThinking(data, buildPlan(true));
+      return await writePage(data, null, findings);
+    }
 
     // Otherwise MC first decides what the request is (and answers it if it is a question).
     const tPrep = perf.now();
@@ -309,7 +373,10 @@ export async function runMcTask({ data }: { data: RunInput }): Promise<McTaskRes
       signal: data.signal,
     });
     const brief = parseBrief(briefOut.text, data.prompt);
-    if (brief.build) return await writePage(data, brief);
+    if (brief.build) {
+      const findings = await parallelAgentThinking(data, buildPlan(true));
+      return await writePage(data, brief, findings);
+    }
 
     return {
       ok: true,
