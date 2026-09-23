@@ -9,6 +9,7 @@ import {
   pageTitle,
   parseBrief,
   polishHtml,
+  needsAgentPass,
   repairHtml,
   needsWebResearch,
 } from "./mc-parse.ts";
