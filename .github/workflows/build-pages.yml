@@ -1,0 +1,42 @@
+name: Build GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "docs/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build-pages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Hive
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static Pages bundle
+        run: npm run build:static
+
+      - name: Commit generated Pages bundle
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs
+          if git diff --cached --quiet; then
+            echo "No Pages changes to commit."
+          else
+            git commit -m "Deploy generated Hive GitHub Pages bundle"
+            git push
+          fi
