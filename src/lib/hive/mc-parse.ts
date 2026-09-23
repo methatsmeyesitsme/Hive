@@ -48,7 +48,7 @@ export function needsAgentPass(prompt: string): boolean {
   const normalized = prompt.trim();
   if (!normalized) return false;
   const words = normalized.split(/\s+/).filter(Boolean).length;
-  return words > 28 || normalized.length > 220 || COMPLEX_BUILD_WORDS.test(normalized);
+  return words > 40 || normalized.length > 240 || COMPLEX_BUILD_WORDS.test(normalized);
 }
 
 const WEB_RESEARCH_WORDS =
