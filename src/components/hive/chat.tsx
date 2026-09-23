@@ -253,29 +253,27 @@ export function ChatWorkspace({ onOpenStatus }: { onOpenStatus: () => void }) {
                             {executionMode === "swarm" ? "MC + the Hive swarm" : "Only MC runs the request"}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={executionMode === "swarm"}
-                          aria-label="Run mode"
-                          title={executionMode === "swarm" ? "Switch to MC Only" : "Switch to All Agents"}
-                          onClick={() => setExecutionMode(executionMode === "swarm" ? "mc" : "swarm")}
-                          disabled={frozen || aiAvailable === false}
-                          className={cn(
-                            "flex h-7 min-w-[104px] items-center justify-between rounded-full border px-1.5 text-[10px] font-medium transition-colors",
-                            executionMode === "swarm"
-                              ? "border-honey/40 bg-honey/10 text-honey"
-                              : "border-line bg-navy-3 text-mist",
-                          )}
-                        >
-                          <span>{executionMode === "swarm" ? "All Agents" : "MC Only"}</span>
-                          <span
-                            className={cn(
-                              "absolute top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full bg-fog transition-[left,right] duration-200",
-                              executionMode === "swarm" ? "right-1" : "left-1",
-                            )}
+                        <div className="w-32">
+                          <div className="flex items-center justify-between text-[10px] font-medium">
+                            <span className={executionMode === "mc" ? "text-honey" : "text-dim"}>MC Only</span>
+                            <span className={executionMode === "swarm" ? "text-honey" : "text-dim"}>All Agents</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="1"
+                            value={executionMode === "swarm" ? 1 : 0}
+                            onChange={(e) => setExecutionMode(e.target.value === "1" ? "swarm" : "mc")}
+                            disabled={frozen || aiAvailable === false}
+                            aria-label="Run mode"
+                            aria-valuemin={0}
+                            aria-valuemax={1}
+                            aria-valuenow={executionMode === "swarm" ? 1 : 0}
+                            aria-valuetext={executionMode === "swarm" ? "All Agents" : "MC Only"}
+                            className="mt-1 h-4 w-full cursor-pointer accent-[hsl(var(--honey))] disabled:cursor-not-allowed"
                           />
-                        </button>
+                        </div>
                       </div>
                     </div>
                   </div>
